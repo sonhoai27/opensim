@@ -4,11 +4,11 @@
 
 OpenSim is an open-source control plane for Apple Simulator. It is designed so an AI agent can see the screen, tap, type, read the accessibility tree, and manage devices — while you watch the same session in a native macOS window and take over with one click.
 
-[![Status: design + plans](https://img.shields.io/badge/status-design%20%2B%20plans-blue)](#status)
+![Status: design + plans](https://img.shields.io/badge/status-design%20%2B%20plans-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Platform: macOS 27+](https://img.shields.io/badge/platform-macOS%2027%2B-lightgrey)](#requirements)
 [![Xcode 27.1+](https://img.shields.io/badge/Xcode-27.1%2B-blue)](#requirements)
-[![MCP compatible](https://img.shields.io/badge/MCP-compatible-6f42c1)](#architecture)
+[![MCP compatible](https://img.shields.io/badge/MCP-compatible-6f42c1)](#how-it-works)
 
 ![OpenSim prototype showing a device table and simulator inspector](docs/assets/opensim-hero.png)
 
