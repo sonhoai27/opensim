@@ -2631,7 +2631,7 @@ Ghi kết quả từng mục vào PR description hoặc task log. Mục fail ph�
 | 9.4 | New Simulator: name/type/runtime, validation, tạo Shutdown | 3 |
 | 9.5 | Runtimes theo version, Add Runtime Download/From File, delete guard | 3A |
 | 9.6 | Settings scene native, 4 tab, Doctor loading/error/retry | 10 |
-| 9.7 | Performance flag false trong Plan 4 | 1, 11 |
+| 9.8 | Performance flag false trong Plan 4 | 1, 11 |
 | 12 | App Sandbox tắt, Hardened Runtime, không lộ token, không shell string | 1, 2, 10 |
 | 13 | Error có code/recovery, OSLog subsystem, audit feed | 2, 9, 10 |
 | 14.3 | XCUITest launch/table/new device/runtimes/window/lease/settings; checklist thủ công | 1, 3, 3A, 9, 10, 11, 4, 7, 8, 12 |

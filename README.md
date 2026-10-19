@@ -1,8 +1,8 @@
 # OpenSim
 
-### The missing Simulator.app for Xcode 27 — built for agents and humans.
+### The open-source Simulator.app alternative for Xcode 27 — built for agents and humans.
 
-OpenSim is an open-source control plane for Apple Simulator. It is designed so an AI agent can see the screen, tap, type, read the accessibility tree, and manage devices — while you watch the same session in a native macOS window and take over with one click.
+OpenSim is an open-source control plane for Apple Simulator, with Android Emulator planned as a second platform. It is designed so an AI agent can see the screen, tap, type, read the accessibility tree, and manage devices — while you watch the same session in a native macOS window and take over with one click.
 
 ![Status: design + plans](https://img.shields.io/badge/status-design%20%2B%20plans-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -14,7 +14,7 @@ OpenSim is an open-source control plane for Apple Simulator. It is designed so a
 
 <p align="center"><sub>UI prototype with sample data. The native app is not built yet.</sub></p>
 
-> **Status — design phase.** The [design spec](docs/superpowers/specs/2026-10-19-open-simulator-design.md) and ten implementation plans are complete. There is no runnable build yet. **Star or watch the repo to follow the first build in Plan 1.**
+> **Status — design phase.** The [design spec](docs/superpowers/specs/2026-10-19-open-simulator-design.md) and ten Apple implementation plans are complete. Android Emulator is planned as [Plan 10](docs/superpowers/plans/2026-10-20-opensim-plan-10-android-emulator.md), after the Apple foundation. There is no runnable build yet. **Star or watch the repo to follow the first build in Plan 1.**
 
 ## Why now
 
@@ -32,6 +32,7 @@ OpenSim does not reimplement the emulator. It drives Apple's simulator runtimes 
 - **Coordinate** — control/observe leases, takeover after a grace period, full audit trail.
 - **Manage** — device lifecycle, multiple runtime versions, `.dmg` runtime import, disk cleanup, CPU/RAM metrics.
 - **Choose a client** — one engine behind the `opensim` CLI, an MCP server, and the macOS app.
+- **One control plane** — Apple Simulator first, Android Emulator next; the CLI, MCP tools, leases, and audit stay platform-neutral.
 
 ## How it works
 
@@ -82,15 +83,17 @@ These are HTML prototypes, not screenshots of the finished app. More states: [Se
 7  Hardening + release
 8  visionOS
 9  Physical devices
+10 Android Emulator           ← planned second platform
 ```
 
-The first usable build is Plan 1: `opensim doctor`, device lifecycle, runtime/app/log commands. Plans 0–9 and their acceptance criteria live in [docs/superpowers/plans](docs/superpowers/plans).
+The first usable build is Plan 1: `opensim doctor`, device lifecycle, runtime/app/log commands. Apple plans 0–9 are the release foundation; Plan 10 adds Android Emulator without changing the Apple path. All plans and acceptance criteria live in [docs/superpowers/plans](docs/superpowers/plans).
 
 ## Documentation
 
 - [Design spec](docs/superpowers/specs/2026-10-19-open-simulator-design.md)
 - [Plan map and shared interfaces](docs/superpowers/plans/2026-10-20-plan-map-and-interfaces.md)
-- [Implementation plans 0–9](docs/superpowers/plans)
+- [Implementation plans 0–10](docs/superpowers/plans)
+- [Android Emulator plan (Plan 10)](docs/superpowers/plans/2026-10-20-opensim-plan-10-android-emulator.md)
 - [UI audit](docs/superpowers/specs/2026-10-20-opensim-ui-audit.md)
 - [UI prototype](proto/ui/devices-v2.html)
 
@@ -99,6 +102,7 @@ The first usable build is Plan 1: `opensim doctor`, device lifecycle, runtime/ap
 - macOS 27.0 or later, arm64.
 - Full Xcode 27.1 or later. Command Line Tools alone are not enough.
 - An installed iOS simulator runtime for the core workflow; watchOS/tvOS runtimes for those platforms.
+- For Android (Plan 10): Android SDK with `adb`, `emulator`, cmdline-tools, Java 17+, and an installed AVD system image.
 
 ## Security and Apple private APIs
 

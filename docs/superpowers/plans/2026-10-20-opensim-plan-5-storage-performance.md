@@ -8768,7 +8768,7 @@ git commit -m "test(storage): add in-use blocking and integration coverage"
 | 9.1 Storage tab | `Table` native, summary, footer CTA, clean sheet; không chart/card | 15 |
 | 9.1 Performance tab | `Table` device, `Gauge`/`Chart` native, process table, cảnh báo; flag bật ở Plan 5 | 16 |
 | 9.3 | Native components, sheet xác nhận, cảnh báo item đang dùng, không mock data | 15, 16 |
-| 9.7 | Performance flag false ở Plan 4, bật ở Plan 5 | 16 |
+| 9.8 | Performance flag false ở Plan 4, bật ở Plan 5 | 16 |
 | 10.1 | Device, cache, log, runtime, DerivedData, Archives, app container | 5, 6 |
 | 10.2 | Allocated size, approximate, symlink, inaccessible, index cache, metadata | 2, 4, 5, 6 |
 | 10.3 | Plan/apply, token 5 phút một lần, chặn in-use, Trash, simctl, audit, >20 GB | 7, 8, 9, 17 |

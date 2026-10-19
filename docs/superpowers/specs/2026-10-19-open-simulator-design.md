@@ -15,22 +15,22 @@ Xcode 27 bỏ `Simulator.app`; thay bằng Device Hub (`DeviceHub.app`, bundle `
 - `SimulatorKit.framework` và `CoreSimulator.framework` vẫn còn; `SimulatorKit` export các lớp `SimDisplayView`, `SimDeviceScreen`, `SimDeviceLegacyHIDClient` và các hàm C `IndigoHIDMessageFor*`.
 - `simctl` không có lệnh tap, swipe, type, đọc accessibility tree. Đây là khoảng trống lớn nhất cho AI agent.
 
-Mục tiêu của OpenSim là công cụ local, open-source, agent-first: một lõi điều khiển simulator của Apple, có CLI, MCP và app macOS đầy đủ, kèm quản trị dung lượng và tài nguyên. OpenSim không viết lại emulator; OpenSim điều khiển runtime Apple.
+Mục tiêu của OpenSim là công cụ local, open-source, agent-first: một lõi điều khiển simulator/emulator, có CLI, MCP và app macOS đầy đủ, kèm quản trị dung lượng và tài nguyên. OpenSim không viết lại emulator; OpenSim điều khiển runtime Apple, và ở Plan 10 mở rộng sang Android Emulator (AVD) qua adb + emulator gRPC.
 
 ## 2. Mục tiêu
 
 1. Một lõi duy nhất cho app, CLI và MCP; không lặp logic giữa các client.
-2. Điều khiển đầy đủ simulator: device, runtime, app, screen, input, accessibility, log.
+2. Điều khiển đầy đủ simulator/emulator: device, runtime, app, screen, input, accessibility, log.
 3. UI macOS full gesture parity: tap, swipe, long-press, drag, pinch, rotate, multi-touch, bàn phím, nút cứng, xoay máy.
 4. Agent-first: JSON ổn định, lỗi có cấu trúc, UI tree ngữ nghĩa, lease rõ ràng, thao tác phá huỷ có xác nhận.
 5. Quản trị dung lượng đĩa và CPU/RAM theo từng device.
-6. Hỗ trợ iOS/iPadOS, watchOS, tvOS; visionOS là plan riêng sau.
-7. Phân phối open-source qua Homebrew; yêu cầu full Xcode 27.1+.
+6. Hỗ trợ iOS/iPadOS, watchOS, tvOS; Android Emulator (AVD) là platform thứ hai ở Plan 10; visionOS là plan riêng sau.
+7. Phân phối open-source qua Homebrew; Apple cần full Xcode 27.1+, Android cần Android SDK + Java 17+.
 
 ## 3. Không mục tiêu
 
-- Không viết lại simulator runtime hoặc nhân iOS.
-- Không hỗ trợ Android.
+- Không viết lại simulator/emulator runtime hoặc nhân iOS/Android.
+- Không hỗ trợ Android physical devices hay emulator bên thứ ba (Genymotion, BlueStacks) trong Plan 10; chỉ Android Emulator (AVD) của Google.
 - Không làm cloud device farm, multi-tenant remote server.
 - Không phát hành qua Mac App Store (private API).
 - Không thay thế Instruments: chỉ số liệu runtime, không có profiling sâu.
@@ -43,11 +43,12 @@ Mục tiêu của OpenSim là công cụ local, open-source, agent-first: một 
 | Chủ đề | Quyết định |
 |---|---|
 | Runtime | Dùng CoreSimulator của Apple, không viết emulator |
-| Nền tảng | iOS/iPadOS + watchOS/tvOS; visionOS sau |
+| Android | Dùng Android Emulator (AVD) + system image của Google; adapter riêng, Plan 10 |
+| Nền tảng | iOS/iPadOS + watchOS/tvOS trước; Android Emulator sau; visionOS sau |
 | UI | Full gesture parity, nhiều cửa sổ, quick switch |
 | Agent | CLI + MCP stdio + MCP HTTP loopback |
 | Quản trị | Disk + CPU/RAM theo device |
-| Phân phối | Open-source local, Homebrew, yêu cầu Xcode |
+| Phân phối | Open-source local, Homebrew; Apple cần Xcode, Android cần Android SDK/JDK |
 | Thiết bị thật | Kiến trúc sẵn abstraction, triển khai ở plan riêng |
 | Ngôn ngữ UI | Native macOS (SwiftUI + AppKit), không web wrapper |
 
@@ -59,7 +60,8 @@ Mục tiêu của OpenSim là công cụ local, open-source, agent-first: một 
 |---|---|---|
 | `OpenSimCore` | Domain model, protocol, command catalog, lease/session rules, storage rules, metrics aggregation | Không private API |
 | `OpenSimBridge` | Duy nhất chạm CoreSimulator/SimulatorKit; dynamic loading; capability check; fallback `simctl` | `OpenSimCore` |
-| `OpenSimDaemon` | Control plane: lifecycle, session, lease, event bus, storage scan, metrics; HTTP/SSE loopback | Core + Bridge |
+| `OpenSimAndroid` | Android Emulator adapter: AVD lifecycle, adb, emulator gRPC, uiautomator; không chạm private API Apple | `OpenSimCore` |
+| `OpenSimDaemon` | Control plane: lifecycle, session, lease, event bus, storage scan, metrics; HTTP/SSE loopback; compose platform adapter | Core + Bridge + Android (Plan 10) |
 | `OpenSimCLI` | `opensim` command line, JSON-first | Core + daemon client |
 | `OpenSimMCP` | MCP stdio proxy + HTTP endpoint host | Core + daemon client |
 | `OpenSimApp` | App macOS, render trực tiếp bằng Bridge, điều khiển qua daemon | Core + Bridge + daemon client |
@@ -105,6 +107,9 @@ Mọi private API nằm trong `OpenSimBridge`. Không target nào khác được
 | Tap/swipe/type/button | `SimDisplayView` digitizer; `IndigoHIDMessageFor*` + `SimDeviceLegacyHIDClient` | XCUITest helper (chậm, chỉ dùng khi HID fail) | Cao |
 | Accessibility tree | `SimulatorKit.SimAccessibilityManager` | XCUITest helper trong plan 2 | Rất cao |
 | Runtime install/delete | `simctl runtime add/delete`; `xcodebuild -downloadPlatform/-importPlatform` cho download/import | CoreSimulator ObjC | Thấp |
+| Android lifecycle/app/log | `emulator`, `adb`, `avdmanager` | Không có private API | Thấp |
+| Android live screen/input | Emulator gRPC `EmulatorController` | `adb exec-out screencap` + `adb shell input` | Trung bình |
+| Android accessibility | `adb shell uiautomator dump` | Không có fallback đọc tree; trả `a11y_unavailable` | Thấp |
 | Log | `simctl spawn booted log stream` | file log trong device data | Thấp |
 
 Nguyên tắc:
@@ -184,7 +189,8 @@ Bridge chỉ chấp nhận developer dir nằm dưới `/Applications` hoặc `/
 - Xcode 27.1 là bản chính; Xcode 27.0 được hỗ trợ nếu fingerprint khớp.
 - Kiểm tra phiên bản Xcode và fingerprint của SimulatorKit/CoreSimulator khi khởi động.
 - Nếu fingerprint lạ: chuyển `compatMode=unknown`, tắt các tính năng private không chắc chắn, hiện cảnh báo trong `doctor` và UI.
-- Không hỗ trợ Command Line Tools-only; app yêu cầu full Xcode.
+- Không hỗ trợ Command Line Tools-only; app yêu cầu full Xcode cho Apple platform.
+- Android Emulator yêu cầu Android SDK (`adb`, `emulator`, cmdline-tools) và Java 17+; không tự tải SDK/system image nếu owner chưa đồng ý.
 - Xcode nâng cấp có thể làm hỏng private API; release notes ghi rõ version đã test.
 
 ## 6. Domain model
@@ -201,6 +207,10 @@ Bridge chỉ chấp nhận developer dir nằm dưới `/Applications` hoặc `/
 | `StorageItem` | `id`, `category`, `path`, `sizeBytes`, `lastUsedAt`, `safeToDelete`, `reason`, `children` |
 | `MetricSample` | `deviceUDID`, `timestamp`, `cpuPercent`, `memoryBytes`, `processCount`, `diskReadBytes`, `diskWriteBytes` |
 | `AuditEvent` | `id`, `timestamp`, `actor`, `sessionID`, `leaseID`, `action`, `target`, `result`, `durationMs` |
+| `AndroidAVD` | `avdName`, `apiLevel`, `tag`, `abi`, `systemImage`, `state`, `serial`, `emulatorPort`, `grpcPort` |
+| `AndroidSystemImage` | `packagePath`, `apiLevel`, `tag`, `abi`, `installed`, `licenseAccepted` |
+
+`Platform` values: `iOS`, `iPadOS` (represented as iOS device family), `watchOS`, `tvOS`, `android`; `visionOS` sau. Android device/runtime IDs use the AVD name and system-image package respectively.
 
 State machine device: `(new) -> Shutdown`; `Shutdown -> Booting -> Booted -> ShuttingDown -> Shutdown`; `Booted -> Erasing -> Shutdown`; `Shutdown -> Deleting`. Mọi transition phát event và ghi audit.
 
@@ -256,6 +266,7 @@ State machine runtime (operation, không phải field `isAvailable`): `available
 | device | `list`, `get`, `create`, `clone`, `boot`, `shutdown`, `erase`, `delete`, `rename`, `status` | delete/erase cần xác nhận |
 | device | `pair`, `unpair`, `location`, `appearance`, `privacy`, `push`, `openurl`, `pasteboard` | watch pair ở plan 6 |
 | runtime | `list`, `download`, `install`, `delete`, `verify` | `download` nhận platform + version Xcode hỗ trợ; `install` nhận `.dmg`; delete chặn nếu còn device dùng |
+| android | `avd list/create/delete`, `system-image list/install` | Plan 10; nhận `--sdk`/`ANDROID_HOME`; không auto-download nếu chưa đồng ý |
 | app | `list`, `install`, `uninstall`, `launch`, `terminate`, `info`, `container`, `data export`, `data import` | install nhận `.app`, `.ipa` đã giải nén |
 | ui | `screenshot`, `record start`, `record stop`, `info` | record dùng `simctl io` |
 | ui | `tap`, `swipe`, `long-press`, `drag`, `pinch`, `rotate`, `scroll`, `type`, `key`, `button`, `wait` | input qua daemon |
@@ -280,6 +291,8 @@ opensim ui tap --on 'label=Login' --device "iPhone Air"
 opensim ui type "hello@example.com" --device "iPhone Air"
 opensim runtime download --platform iOS --version 26.4
 opensim runtime install ~/Downloads/iOS_26.3_Simulator_Runtime.dmg
+opensim android avd list --json
+opensim android system-image list --json
 opensim storage scan --json
 opensim perf top --device "iPhone Air"
 opensim doctor --json
@@ -342,6 +355,10 @@ Tool name dùng snake_case, ổn định. Mọi tool trả `structuredContent` t
 | `runtime_download` | write | `platform`, `version` | runtime đang cài + progress event |
 | `runtime_install` | write | `path` | runtime từ `.dmg` |
 | `runtime_delete` | destructive | `identifier`, `confirm` | trạng thái; chặn nếu `deviceCount > 0` |
+| `android_avd_list` | read | `sdkPath?` | AVD + state |
+| `android_avd_create` | write | `name`, `deviceType`, `systemImage` | AVD mới |
+| `android_system_image_list` | read | `sdkPath?` | system image đã cài/khả dụng |
+| `android_system_image_install` | destructive | `package`, `confirm` | trạng thái; cần license/consent |
 | `app_list` | read | `device`, `filter?` | danh sách app |
 | `app_install` | write | `device`, `path` | app |
 | `app_uninstall` | destructive | `device`, `bundleID`, `confirm` | trạng thái |
@@ -392,7 +409,7 @@ Quy tắc:
 
 Lỗi MCP dùng JSON-RPC error code chuẩn cho protocol; lỗi nghiệp vụ nằm trong `structuredContent.error` theo cùng schema CLI. Các mã:
 
-`xcode_not_found`, `unsupported_xcode`, `private_api_unavailable`, `a11y_unavailable`, `device_not_found`, `device_not_booted`, `device_busy`, `device_name_conflict`, `lease_required`, `lease_conflict`, `lease_revoked`, `runtime_version_unavailable`, `runtime_in_use`, `simctl_failed`, `input_failed`, `storage_scan_failed`, `storage_in_use`, `confirmation_required`, `invalid_argument`, `permission_denied`, `daemon_unavailable`, `internal`.
+`xcode_not_found`, `unsupported_xcode`, `private_api_unavailable`, `a11y_unavailable`, `device_not_found`, `device_not_booted`, `device_busy`, `device_name_conflict`, `lease_required`, `lease_conflict`, `lease_revoked`, `runtime_version_unavailable`, `runtime_in_use`, `simctl_failed`, `input_failed`, `storage_scan_failed`, `storage_in_use`, `confirmation_required`, `invalid_argument`, `permission_denied`, `daemon_unavailable`, `android_sdk_not_found`, `avd_not_found`, `emulator_failed`, `adb_failed`, `android_image_unavailable`, `grpc_unavailable`, `internal`.
 
 Mọi lỗi có `retryable` và `recovery` để agent quyết định bước tiếp theo.
 
@@ -456,7 +473,16 @@ Mọi lỗi có `retryable` và `recovery` để agent quyết định bước t
 - Input: keyboard capture, paste `⌘V`, default gesture `Direct`/`Pinch`/`Rotate` (theo `GestureMode` của Plan 4), activity thumbnails, trạng thái HID.
 - Capabilities: chạy Doctor, rows `render`/`hid`/`accessibility`/`screenshot`/`video`/`watch`/`tv` kèm source, daemon health, disk free, device/runtime count; loading, error + Retry, Copy JSON. Không hiển thị token hay secret.
 
-### 9.7 Performance trong Plan 4
+### 9.7 Android Emulator (Plan 10)
+
+- Devices/Runtimes dùng cùng layout native; thêm platform filter và giá trị `android`; không tạo màn Android riêng.
+- New Simulator thêm nhóm device type Android (Pixel…) và system image thay cho Apple runtime; Create vẫn trả device `Shutdown`.
+- Device window Android dùng live screen qua emulator gRPC, fallback screenshot polling; toolbar có Back/Home/Overview/Power/Rotate.
+- Settings thêm Android SDK path, `adb`/`emulator`/`avdmanager` status; Doctor thêm rows `androidSdk`, `adb`, `avdmanager`, `emulatorGrpc`, `androidA11y`.
+- Input fallback qua `adb shell input` không hỗ trợ multi-touch; UI/doctor phải nói rõ khi gRPC unavailable.
+- Plan 10 không thay đổi UI shell, lease, audit hay operation catalog; chỉ thêm adapter/capability.
+
+### 9.8 Performance trong Plan 4
 
 - `AppFeature.performance` mặc định `false` trong Plan 4; sidebar và view Performance bị ẩn hoàn toàn, không có shell rỗng hay tab chết.
 - Plan 5 nối dữ liệu thật rồi bật flag; Performance vẫn nằm trong scope cuối, chỉ tạm ẩn trong giai đoạn app chưa có metrics.
@@ -475,6 +501,8 @@ Mọi lỗi có `retryable` và `recovery` để agent quyết định bước t
 | DerivedData | `~/Library/Developer/Xcode/DerivedData` | Trash |
 | Archives | `~/Library/Developer/Xcode/Archives` | Trash |
 | App container | Đường dẫn từ `simctl get_app_container` | `simctl uninstall` hoặc xoá data có xác nhận |
+| Android AVD data | `~/.android/avd/<name>.avd` | `avdmanager delete avd` sau khi dừng; chặn nếu đang chạy |
+| Android system image | `$ANDROID_SDK/system-images/<api>/<tag>/<abi>` | `sdkmanager --uninstall`; chặn nếu có AVD dùng |
 
 Trong phạm vi plan 5: runtime do người dùng cài và xoá được bằng `simctl runtime delete`. Ngoài phạm vi: runtime hệ thống cần quyền admin, `iOS DeviceSupport`, các thư mục Xcode không xác định; không xoá các mục này.
 
@@ -510,6 +538,7 @@ Trong phạm vi plan 5: runtime do người dùng cài và xoá được bằng 
   - Process con của `launchd_sim` thuộc device đó.
   - `SIMULATOR_UDID` trong environment là nguồn phụ nếu đọc được.
   - Process không map được gom vào nhóm `unknown` và hiển thị riêng.
+- Android: map process `emulator`/`qemu-system-*` theo AVD name trong argv; RAM/CPU bổ sung từ `adb shell dumpsys meminfo`/`top` khi host process không đủ.
 - Ring buffer 10 phút, sample 1 giây; UI chỉ subscribe khi Performance được bật và view mở.
 - Ngưỡng cảnh báo mặc định: CPU > 150% trong 30 giây, RAM > 2 GB, disk free < 10 GB. Ngưỡng cấu hình được.
 - Hành động terminate app/shutdown device thuộc device window/inspector, đi qua daemon operation với lease/audit; Performance tab chỉ đọc metrics và không gọi Bridge write trực tiếp. Kill process tùy ý không có trong UI mặc định.
@@ -521,7 +550,8 @@ Trong phạm vi plan 5: runtime do người dùng cài và xoá được bằng 
 - Bearer token ngẫu nhiên 32 byte, sinh mỗi lần daemon start; file `0600`, thư mục `0700`.
 - Kiểm tra `Host`/`Origin`; từ chối request lạ để chống DNS rebinding.
 - Không dùng shell string; mọi tiến trình chạy bằng `Process` với argument array.
-- Validate UDID theo UUID, bundle ID theo regex, path theo allowlist root.
+- Validate UDID theo UUID; Android device ID theo prefix `android:` + AVD name; bundle ID theo regex; path theo allowlist root (bao gồm Android SDK/AVD).
+- Android emulator gRPC chỉ bind loopback; không mở port ra LAN; không auto-accept license/tải system image.
 - Thao tác phá huỷ cần confirm/plan token; audit đầy đủ; không có "auto-clean".
 - App tắt App Sandbox; bật Hardened Runtime; chỉ thêm `disable-library-validation` nếu spike chứng minh cần để load framework Apple.
 - Ký Developer ID và notarize bản phát hành; không App Store.
@@ -539,6 +569,7 @@ Trong phạm vi plan 5: runtime do người dùng cài và xoá được bằng 
   - Xcode path/version, full Xcode.
   - Sự tồn tại của CoreSimulator/SimulatorKit.
   - Capability render/hid/a11y/screenshot/video.
+  - Android: SDK path, adb/emulator/avdmanager/sdkmanager, Java 17+, emulator gRPC, uiautomator.
   - Daemon health, token permission.
   - Disk free, số device/runtime.
   - Kết quả JSON ổn định để agent đọc.
@@ -564,6 +595,8 @@ Trong phạm vi plan 5: runtime do người dùng cài và xoá được bằng 
 - Test device create: tên trùng, runtime chưa cài, sai platform; device mới ở `Shutdown`.
 - Test runtime: import `.dmg` qua bridge giả hoặc fixture; version ngoài catalog trả `runtime_version_unavailable`; cài xong device `Runtime missing` chuyển `Shutdown`; delete bị chặn khi còn device.
 - Test storage: scan fixture directories, size, safe flags, plan/apply, chặn item in-use.
+- Test Android: AVD list/create/boot/shutdown/delete với fixture AVD; `adb install`/launch/log; screenshot; uiautomator selector/tap/type; gRPC stream/touch và fallback adb; AVD/system image in-use guard.
+- Test xác nhận không tự tải Android SDK/system image khi chưa có consent; thiếu SDK trả `android_sdk_not_found` với hướng dẫn.
 - Test perf: process mapping với device booted; sample có dữ liệu; ngưỡng cảnh báo.
 - Test CLI JSON golden và MCP contract (tools/list, tools/call, errors).
 
@@ -587,7 +620,7 @@ Trong phạm vi plan 5: runtime do người dùng cài và xoá được bằng 
 ## 15. Đóng gói và phát hành
 
 - SwiftPM cho Core/Bridge/Daemon/CLI; XcodeGen (`project.yml`) cho app; CI cài XcodeGen qua Homebrew.
-- Dependencies: `swift-argument-parser`, `swift-log`, `Hummingbird` 2.x cho HTTP/SSE; không dùng MCP SDK; không dùng database.
+- Dependencies: `swift-argument-parser`, `swift-log`, `Hummingbird` 2.x cho HTTP/SSE; không dùng MCP SDK; không dùng database. Plan 10 thêm `grpc-swift` 2.x + `swift-protobuf` cho Android emulator gRPC; generated stubs được commit, không cần protoc khi build.
 - App bundle `OpenSim.app`, bundle ID `dev.opensim.app`; daemon bundle ID `dev.opensim.daemon`; CLI `opensim`.
 - Homebrew tap `opensim` với cask app và formula CLI/daemon.
 - Notarize bằng Developer ID; nếu chưa có tài khoản, phát hành source build + hướng dẫn `xcodebuild`.
@@ -613,8 +646,9 @@ Mỗi plan là một nhát cắt hoàn chỉnh có test và tài liệu; không 
 | 7 | Hardening + đóng gói + release simulator | Homebrew, notarize, docs, CI xanh, security review |
 | 8 | visionOS | Platform adapter, fixture, render/input; test |
 | 9 | Thiết bị thật qua CoreDevice | Pair, install, launch, screenshot, HID, log; test |
+| 10 | Android Emulator | AVD lifecycle, adb/gRPC screen/input, uiautomator, system images, UI/CLI/MCP, test |
 
-Phụ thuộc: 1 sau 0; 2 sau 1; 3 sau 1; 4 sau 2 và 3; 5 sau 1 và 3; 6 sau 2; 7 sau 1-6; 8 sau 7; 9 sau 3 và 7.
+Phụ thuộc: 1 sau 0; 2 sau 1; 3 sau 1; 4 sau 2 và 3; 5 sau 1 và 3; 6 sau 2; 7 sau 1-6; 8 sau 7; 9 sau 3 và 7; 10 sau 2, 3 và 4, có thể chạy song song 5/6 hoặc sau 7 tùy việc Android có nằm trong release đầu hay không.
 
 Quy tắc plan:
 
@@ -624,6 +658,7 @@ Quy tắc plan:
 - Plan 6 không đụng kiến trúc lõi; chỉ thêm platform adapter và fixture.
 - Plan 7 chỉ bắt đầu khi acceptance criteria của plan 1-6 đạt.
 - Plan 8 và 9 là sau release simulator; không chặn phạm vi release 1-7.
+- Plan 10 additive cho Android Emulator; có thể chạy song song Plan 5/6 hoặc sau Plan 7. Nếu owner đưa Android vào release đầu, Plan 10 trở thành dependency của Plan 7; nếu không, Apple release 1-7 không bị chặn.
 
 ## 17. Acceptance criteria
 
@@ -645,6 +680,7 @@ Quy tắc plan:
 14. Performance (khi flag bật) hiển thị CPU/RAM của device đang chạy; ngưỡng cảnh báo hoạt động.
 15. watchOS/tvOS: boot, render, screenshot, tap fixture thành công.
 16. `opensim doctor` phát hiện đúng khi thiếu Xcode hoặc Xcode sai version.
+17. Android (Plan 10): AVD tạo/boot được, cài fixture, chụp screen, tap/type qua uiautomator/gRPC; thiếu SDK trả lỗi rõ ràng; không auto-download image.
 
 ### 17.2 Chỉ số mục tiêu
 
@@ -671,6 +707,8 @@ Quy tắc plan:
 | Process mapping thiếu UDID | Trung bình | argv `launchd_sim`, env, process tree; nhóm unknown |
 | Xcode update phá vỡ | Cao | Version gate, compat mode, release notes, test matrix |
 | Runtime version cũ không tương thích Xcode 27 | Trung bình | Catalog best-effort; import DMG qua `simctl runtime add` có verify; UI ghi source; không hứa mọi version lịch sử |
+| Android Emulator/gRPC thay đổi hoặc thiếu | Trung bình | Adapter riêng, capability gate, fallback adb; fixture AVD; doctor báo rõ |
+| System image/license Android | Trung bình | Không auto-download; yêu cầu consent; hiển thị license trước khi cài |
 | Chính sách Apple với private API | Trung bình | Local/open-source, không App Store, README rõ; tư vấn pháp lý trước release |
 | Phạm vi phình | Cao | Plans, non-goals, acceptance criteria; mọi tính năng mới cần spec bổ sung |
 
@@ -692,6 +730,9 @@ Quy tắc plan:
 - Runtime hỗ trợ nhiều version song song: download version Xcode hỗ trợ hoặc import `.dmg`; danh sách lịch sử là best-effort, không hứa đầy đủ.
 - Xoá runtime bị chặn khi còn device tham chiếu. New Simulator luôn tạo device `Shutdown`.
 - Default gesture của app là `Direct` / `Pinch` / `Rotate`, khớp `GestureMode` của Plan 4.
+- Định vị: OpenSim là **alternative** cho workflow Simulator.app, không phải bản sao 1:1.
+- Android Emulator là platform thứ hai ở Plan 10, dùng AVD/system image của Google; không hỗ trợ Android physical/emulator bên thứ ba trong plan đó.
+- Apple path và Android path dùng chung operation catalog, lease/audit và UI shell; Android adapter nằm ngoài `OpenSimBridge`.
 
 ## 20. Bằng chứng môi trường
 

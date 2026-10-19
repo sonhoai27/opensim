@@ -1573,6 +1573,12 @@ public enum ErrorCode: String, Codable, Sendable, CaseIterable {
     case leaseRequired = "lease_required"
     case leaseConflict = "lease_conflict"
     case leaseRevoked = "lease_revoked"
+    case androidSDKNotFound = "android_sdk_not_found"
+    case avdNotFound = "avd_not_found"
+    case emulatorFailed = "emulator_failed"
+    case adbFailed = "adb_failed"
+    case androidImageUnavailable = "android_image_unavailable"
+    case grpcUnavailable = "grpc_unavailable"
     case simctlFailed = "simctl_failed"
     case inputFailed = "input_failed"
     case storageScanFailed = "storage_scan_failed"
@@ -1732,7 +1738,9 @@ public enum OpenSimExitCode: Int32, Sendable, CaseIterable {
         switch code {
         case ErrorCode.invalidArgument.rawValue:
             return .usage
-        case ErrorCode.deviceNotFound.rawValue:
+        case ErrorCode.deviceNotFound.rawValue,
+             ErrorCode.avdNotFound.rawValue,
+             ErrorCode.androidImageUnavailable.rawValue:
             return .notFound
         case ErrorCode.deviceNotBooted.rawValue,
              ErrorCode.deviceBusy.rawValue,
@@ -1747,8 +1755,13 @@ public enum OpenSimExitCode: Int32, Sendable, CaseIterable {
              ErrorCode.privateApiUnavailable.rawValue,
              ErrorCode.a11yUnavailable.rawValue,
              ErrorCode.capabilityUnavailable.rawValue,
-             ErrorCode.runtimeVersionUnavailable.rawValue:
+             ErrorCode.runtimeVersionUnavailable.rawValue,
+             ErrorCode.androidSDKNotFound.rawValue,
+             ErrorCode.grpcUnavailable.rawValue:
             return .unsupported
+        case ErrorCode.emulatorFailed.rawValue,
+             ErrorCode.adbFailed.rawValue:
+            return .internalError
         case ErrorCode.xcodeNotFound.rawValue,
              ErrorCode.permissionDenied.rawValue:
             return .permission
