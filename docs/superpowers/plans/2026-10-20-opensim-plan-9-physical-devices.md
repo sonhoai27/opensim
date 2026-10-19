@@ -1108,9 +1108,7 @@ func testAuditActionUsesPhysicalNamespace() {
 ```swift
 public extension OperationCatalog {
     static func openSim() -> OperationCatalog {
-        var catalog = OperationCatalog.plan3()
-        catalog.registerUIOperations()
-        catalog.registerStoragePerformanceOperations()
+        var catalog = OperationCatalog.plan5()
         catalog.registerPhysicalOperations()
         return catalog
     }

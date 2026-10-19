@@ -89,6 +89,7 @@ Mục tiêu của OpenSim là công cụ local, open-source, agent-first: một 
 - App lấy `control` khi cửa sổ device được focus và chưa có owner khác. Nếu agent đang giữ, app hiện banner "Agent đang điều khiển" kèm nút `Take control`.
 - `Take control` chuyển lease sau khi owner cũ đồng ý (app/CLI) hoặc sau grace period 3 giây đối với lease của agent; mọi lần chuyển ghi audit.
 - Thao tác đọc không cần lease. Thao tác ghi không có lease trả lỗi `lease_required`; nếu lease thuộc owner khác trả `lease_conflict` kèm owner, mode, expiresAt.
+- Ngoại lệ: thao tác toàn cục không gắn device (`device_create`, `runtime_download`, `runtime_install`, `runtime_delete`) cần session hợp lệ, confirm/audit theo loại thao tác, nhưng không cần device `control` lease.
 - CLI tạo lease ngắn hạn tự động khi chạy một lệnh ghi, trừ khi truyền `--session`.
 - MCP server giữ lease theo session và heartbeat tự động.
 
@@ -103,7 +104,7 @@ Mọi private API nằm trong `OpenSimBridge`. Không target nào khác được
 | Live screen | `SimulatorKit.SimDisplayView` + `SimDeviceScreen` | IOSurface + view tự dựng, cuối cùng là screenshot polling | Cao |
 | Tap/swipe/type/button | `SimDisplayView` digitizer; `IndigoHIDMessageFor*` + `SimDeviceLegacyHIDClient` | XCUITest helper (chậm, chỉ dùng khi HID fail) | Cao |
 | Accessibility tree | `SimulatorKit.SimAccessibilityManager` | XCUITest helper trong plan 2 | Rất cao |
-| Runtime install/delete | `simctl runtime` | CoreSimulator ObjC | Thấp |
+| Runtime install/delete | `simctl runtime add/delete`; `xcodebuild -downloadPlatform/-importPlatform` cho download/import | CoreSimulator ObjC | Thấp |
 | Log | `simctl spawn booted log stream` | file log trong device data | Thấp |
 
 Nguyên tắc:
@@ -149,6 +150,21 @@ Bridge chỉ chấp nhận developer dir nằm dưới `/Applications` hoặc `/
 3. Người dùng bấm `Take control`; daemon thu hồi lease cũ sau grace period, ghi audit, phát event.
 4. App bật input; agent nhận lỗi `lease_revoked` ở lần gọi tiếp theo.
 
+**Tạo device**
+
+1. Client gửi `device_create` với `name`, `deviceType`, `runtime` (version cụ thể, không chỉ platform).
+2. Daemon kiểm tra tên chưa tồn tại, runtime đã cài và cùng platform với device type.
+3. Bridge tạo device ở trạng thái `Shutdown`; không auto-boot.
+4. Daemon trả device mới, phát event `device.created`; UI chọn row mới và hiện CTA `Boot & Open`.
+
+**Cài runtime (kể cả version cũ)**
+
+1. Client chọn `runtime_download` (`platform`, `version`) hoặc `runtime_install` (`path` tới `.dmg`).
+2. Daemon kiểm tra version: download chỉ dùng catalog Xcode hỗ trợ; file import dùng `simctl runtime add`.
+3. Daemon phát progress event khi backend cung cấp; client có thể cancel trước khi hoàn tất. UI được phép hiển thị ProgressView indeterminate nếu chưa có percent.
+4. Khi cài xong, device đang `Runtime missing` dùng đúng runtime đó chuyển sang `Shutdown`; UI và runtime picker của New Simulator cập nhật.
+5. Xoá runtime bị chặn nếu còn device tham chiếu; nếu không còn device, xoá qua `simctl runtime delete`.
+
 **Storage scan**
 
 1. Client gọi `POST /v1/storage/scans`.
@@ -159,7 +175,7 @@ Bridge chỉ chấp nhận developer dir nằm dưới `/Applications` hoặc `/
 **Metrics**
 
 1. Daemon sample mỗi giây.
-2. UI subscribe SSE khi tab Performance mở.
+2. UI subscribe SSE khi Performance được bật và view Performance mở.
 3. CLI/MCP đọc snapshot hoặc ring buffer 10 phút.
 
 ### 5.6 Tương thích
@@ -176,7 +192,7 @@ Bridge chỉ chấp nhận developer dir nằm dưới `/Applications` hoặc `/
 | Entity | Trường chính |
 |---|---|
 | `Device` | `udid`, `name`, `platform`, `deviceType`, `runtime`, `state`, `isAvailable`, `dataPath`, `lastBootedAt` |
-| `Runtime` | `identifier`, `platform`, `version`, `build`, `state`, `sizeBytes`, `path` |
+| `Runtime` | `identifier`, `name`, `platform`, `version`, `build`, `isAvailable`, `path`, `sizeBytes?`, `source?` (`system` / `xcode-catalog` / `file`), `deviceCount?` |
 | `App` | `bundleID`, `displayName`, `version`, `build`, `dataContainer`, `appContainer` |
 | `Screen` | `screenID`, `width`, `height`, `scale`, `rotation`, `displayClass` |
 | `Session` | `id`, `clientKind`, `clientName`, `createdAt`, `lastSeenAt` |
@@ -186,7 +202,9 @@ Bridge chỉ chấp nhận developer dir nằm dưới `/Applications` hoặc `/
 | `MetricSample` | `deviceUDID`, `timestamp`, `cpuPercent`, `memoryBytes`, `processCount`, `diskReadBytes`, `diskWriteBytes` |
 | `AuditEvent` | `id`, `timestamp`, `actor`, `sessionID`, `leaseID`, `action`, `target`, `result`, `durationMs` |
 
-State machine device: `Shutdown -> Booting -> Booted -> ShuttingDown -> Shutdown`; `Booted -> Erasing -> Shutdown`; `Shutdown -> Deleting`. Mọi transition phát event và ghi audit.
+State machine device: `(new) -> Shutdown`; `Shutdown -> Booting -> Booted -> ShuttingDown -> Shutdown`; `Booted -> Erasing -> Shutdown`; `Shutdown -> Deleting`. Mọi transition phát event và ghi audit.
+
+State machine runtime (operation, không phải field `isAvailable`): `available -> downloading -> installing -> installed -> removing -> unavailable`; lỗi/cancel từ `downloading`/`installing` trở về trạng thái trước đó. Runtime đã cài vẫn có thể `deviceCount > 0`; delete chỉ hợp lệ khi `deviceCount == 0`.
 
 ## 7. CLI `opensim`
 
@@ -237,7 +255,7 @@ State machine device: `Shutdown -> Booting -> Booted -> ShuttingDown -> Shutdown
 |---|---|---|
 | device | `list`, `get`, `create`, `clone`, `boot`, `shutdown`, `erase`, `delete`, `rename`, `status` | delete/erase cần xác nhận |
 | device | `pair`, `unpair`, `location`, `appearance`, `privacy`, `push`, `openurl`, `pasteboard` | watch pair ở plan 6 |
-| runtime | `list`, `install`, `delete`, `verify` | delete chặn nếu đang dùng |
+| runtime | `list`, `download`, `install`, `delete`, `verify` | `download` nhận platform + version Xcode hỗ trợ; `install` nhận `.dmg`; delete chặn nếu còn device dùng |
 | app | `list`, `install`, `uninstall`, `launch`, `terminate`, `info`, `container`, `data export`, `data import` | install nhận `.app`, `.ipa` đã giải nén |
 | ui | `screenshot`, `record start`, `record stop`, `info` | record dùng `simctl io` |
 | ui | `tap`, `swipe`, `long-press`, `drag`, `pinch`, `rotate`, `scroll`, `type`, `key`, `button`, `wait` | input qua daemon |
@@ -253,13 +271,15 @@ State machine device: `Shutdown -> Booting -> Booted -> ShuttingDown -> Shutdown
 Ví dụ:
 
 ```bash
-opensim device boot "iPhone Air" --wait
+opensim device boot --device "iPhone Air" --wait
 opensim app install ./Build/MyApp.app --device "iPhone Air"
 opensim app launch com.example.myapp --device "iPhone Air"
 opensim ui screenshot --device "iPhone Air" --out /tmp/screen.png
 opensim ui tree --device "iPhone Air" --json
 opensim ui tap --on 'label=Login' --device "iPhone Air"
 opensim ui type "hello@example.com" --device "iPhone Air"
+opensim runtime download --platform iOS --version 26.4
+opensim runtime install ~/Downloads/iOS_26.3_Simulator_Runtime.dmg
 opensim storage scan --json
 opensim perf top --device "iPhone Air"
 opensim doctor --json
@@ -318,9 +338,10 @@ Tool name dùng snake_case, ổn định. Mọi tool trả `structuredContent` t
 | `device_push` | write | `device`, `bundleID`, `payload` | trạng thái |
 | `device_open_url` | write | `device`, `url` | trạng thái |
 | `device_pasteboard` | write | `device`, `text` hoặc `read: true` | nội dung |
-| `runtime_list` | read | `platform?` | danh sách runtime |
-| `runtime_install` | write | `path` | runtime |
-| `runtime_delete` | destructive | `identifier`, `confirm` | trạng thái |
+| `runtime_list` | read | `platform?` | runtime đã cài + version catalog biết được |
+| `runtime_download` | write | `platform`, `version` | runtime đang cài + progress event |
+| `runtime_install` | write | `path` | runtime từ `.dmg` |
+| `runtime_delete` | destructive | `identifier`, `confirm` | trạng thái; chặn nếu `deviceCount > 0` |
 | `app_list` | read | `device`, `filter?` | danh sách app |
 | `app_install` | write | `device`, `path` | app |
 | `app_uninstall` | destructive | `device`, `bundleID`, `confirm` | trạng thái |
@@ -361,7 +382,7 @@ Tool name dùng snake_case, ổn định. Mọi tool trả `structuredContent` t
 
 Quy tắc:
 
-- Tool read không cần lease; tool write yêu cầu `session_acquire` hoặc CLI tự tạo lease.
+- Tool read không cần lease; tool write theo device yêu cầu `session_acquire` hoặc CLI tự tạo lease. Tool toàn cục (`device_create`, runtime download/install/delete) cần session hợp lệ nhưng không cần device control lease.
 - Tool destructive bắt buộc `confirm: true` hoặc `planToken` từ `storage_clean` plan; plan token hết hạn sau 5 phút và dùng một lần.
 - `screen_screenshot` mặc định trả JPEG quality 80 scale 0.5 qua image content; `raw: true` trả PNG full. Kèm `path` để agent không phải giữ base64.
 - `ui_tree` mặc định giới hạn 1.500 node và depth 30; nếu vượt, trả `truncated: true` và gợi ý dùng `ui_find`.
@@ -371,7 +392,7 @@ Quy tắc:
 
 Lỗi MCP dùng JSON-RPC error code chuẩn cho protocol; lỗi nghiệp vụ nằm trong `structuredContent.error` theo cùng schema CLI. Các mã:
 
-`xcode_not_found`, `unsupported_xcode`, `private_api_unavailable`, `a11y_unavailable`, `device_not_found`, `device_not_booted`, `device_busy`, `lease_required`, `lease_conflict`, `lease_revoked`, `simctl_failed`, `input_failed`, `storage_scan_failed`, `storage_in_use`, `confirmation_required`, `invalid_argument`, `permission_denied`, `daemon_unavailable`, `internal`.
+`xcode_not_found`, `unsupported_xcode`, `private_api_unavailable`, `a11y_unavailable`, `device_not_found`, `device_not_booted`, `device_busy`, `device_name_conflict`, `lease_required`, `lease_conflict`, `lease_revoked`, `runtime_version_unavailable`, `runtime_in_use`, `simctl_failed`, `input_failed`, `storage_scan_failed`, `storage_in_use`, `confirmation_required`, `invalid_argument`, `permission_denied`, `daemon_unavailable`, `internal`.
 
 Mọi lỗi có `retryable` và `recovery` để agent quyết định bước tiếp theo.
 
@@ -379,31 +400,67 @@ Mọi lỗi có `retryable` và `recovery` để agent quyết định bước t
 
 ### 9.1 Cửa sổ chính
 
-- Sidebar: device nhóm theo platform/runtime; tìm kiếm; trạng thái boot; lease owner; nút boot/shutdown nhanh; section Runtime.
-- Tab `Devices`: lưới/list device kèm preview ảnh cuối; nút tạo/clone/erase/delete.
-- Tab `Storage`: biểu đồ dung lượng theo nhóm; danh sách item; chọn để dọn; preview thu hồi.
-- Tab `Performance`: card theo device với sparkline CPU/RAM; process table; cảnh báo.
-- Tab `Agent Activity`: feed realtime các tool call; session/lease; latency; thumbnail; pause/take control; audit log.
+- `NavigationSplitView` với sidebar `List(selection:)` `.listStyle(.sidebar)`; nhóm Devices/Runtimes/Storage/Activity; Performance chỉ xuất hiện khi `AppFeature.performance` bật (Plan 5); search; badge count dùng system.
+- Detail `Devices`: `Table` cột Device/State/Agent; selected row mở `.inspector` cho preview, runtime, screen, last boot và agent; header có `New Device`; action theo state nằm trong inspector. Không grid card, preview card, badge hay button lặp trên từng dòng.
+- Detail `Runtimes`: một row cho mỗi platform + version, không gộp nhiều version vào một platform; action `Install`, `Reveal`, `Remove`; header có `Add Runtime`.
+- Storage/Activity là detail destination; dùng `Table`, `List` native; không dashboard card, treemap, sparkline hay feed card tự chế.
+- Settings là cửa sổ `Settings` scene riêng, không phải sidebar destination.
+- Sidebar là nguồn điều hướng duy nhất; không thêm top tab trùng với sidebar.
 
 ### 9.2 Cửa sổ device
 
-- `SimDisplayView` render trực tiếp trong `NSViewRepresentable`.
-- Toolbar: Home, Side, Volume Up/Down, Lock, Rotate Left/Right, Screenshot, Record, Keyboard, Gesture mode, Zoom.
+- `SimDisplayView` render trực tiếp trong `NSViewRepresentable`, bên trong `WindowGroup` native; titlebar, traffic lights, material và shadow do macOS cung cấp.
+- Primary action luôn thấy: Home, Capture, Record, Rotate, Keyboard trong bottom bar native (`ControlGroup` + `safeAreaInset(edge: .bottom)`, `.background(.bar)`). Lock/Volume/Side/Zoom/Gesture nằm trong `Menu` More. Mỗi action dùng `Label`/SF Symbol và `.help`.
+- Agent status là `Menu`/`Label` trong titlebar, hiển thị lease và Take control; không pill tự tô màu, không inspector agent trong cửa sổ, không status bar thường trú.
 - Gesture: tap, long-press, swipe, drag, pinch, rotate, multi-touch; bàn phím Mac ánh xạ vào simulator; paste hai chiều.
-- Hỗ trợ nhiều cửa sổ device cùng lúc; mỗi cửa sổ giữ lease `control` khi focus.
-- Device luôn mở trong cửa sổ riêng như Simulator; không có chế độ nhúng tab và không có top-level tab "Device Window". Cửa sổ device không có inspector agent bên trong; trạng thái agent nằm ở sidebar/Activity và tối đa một status bar mỏng.
-- `Cmd+K` mở device palette: tìm, boot, switch, take control.
-- Menu bar extra: danh sách device, boot/shutdown, switch nhanh, trạng thái agent.
+- Nhiều cửa sổ device cùng lúc; lease `control` lấy khi cửa sổ focus và giải phóng khi đóng/resign. Device luôn mở cửa sổ riêng; không chế độ nhúng tab và không top-level tab "Device Window".
+- Input của app chỉ được gửi khi cửa sổ đang key và app còn giữ lease `control` chưa hết hạn. Khi lease conflict/revoked, overlay input bị disable và hiện banner; không có đường tắt nào gọi Bridge input mà bỏ qua lease.
+- `Cmd+K` mở device palette dạng sheet native (`List` + `.searchable`); menu bar extra dùng SwiftUI native.
 - Cửa sổ đóng thì giải phóng lease; device vẫn chạy.
 
-### 9.3 Hành vi
+### 9.3 Native-only UI constraints
 
-- Không dùng mock data; mọi số liệu lấy từ daemon/bridge.
-- Khi private capability thiếu, UI hiện banner và disable đúng tính năng; không crash.
-- Thao tác phá huỷ mở sheet xác nhận, hiện target và hậu quả; mặc định focus vào Cancel.
-- Storage clean mở sheet preview với tổng dung lượng thu hồi, danh sách item, cảnh báo item đang dùng.
-- Accessibility: label đầy đủ, keyboard navigation, VoiceOver cho control; không phụ thuộc màu.
-- Native macOS look; không web view cho UI chính.
+- Chỉ dùng component SwiftUI/macOS: `NavigationSplitView`, `List`, `Table`, `Form`, `GroupBox`, `ControlGroup`, `Menu`, `Picker`, `ToolbarItemGroup`, `ContentUnavailableView`, `ProgressView`, `Chart`/`Gauge`.
+- Typography: system text styles (`.title2`, `.headline`, `.subheadline`, `.caption`, `.caption2`), `.monospacedDigit()` cho số; không `font(.system(size:))`, không chữ 8–9px cố định.
+- Color: semantic foreground styles, `accentColor`/`tint`; xanh/vàng/đỏ chỉ cho trạng thái có nghĩa; không hex, không `Color(red:green:blue:)`, không gradient, không custom shadow, không pill/badge tự chế.
+- Icon: SF Symbols only; cùng weight/size; không SVG tự vẽ.
+- States: `ContentUnavailableView` cho empty/unavailable, `ProgressView` cho loading, `.redacted` khi refresh, `confirmationDialog`/sheet native cho thao tác phá huỷ.
+- Copy: ngắn, một câu trả lời cho việc người dùng cần làm; giải thích dài đưa vào `.help`, disclosure hoặc inspector; không lặp trạng thái.
+- Accessibility: label đầy đủ, keyboard navigation, focus, VoiceOver, hit target ≥28pt; không truyền tải chỉ bằng màu.
+- Prototype HTML chỉ là sketch bố cục; không port CSS, hex, gradient, shadow, dock chrome hay font cố định vào app.
+- App dùng system appearance; dark mode tự động, không hardcode light/dark.
+
+### 9.4 Devices và New Simulator
+
+- `New Device` (`⌘N`) mở sheet native gồm `TextField` tên, `Picker` device type và `Picker` runtime; không tự boot sau khi tạo.
+- Runtime picker lọc theo platform của device type và liệt kê **mọi version đã cài**, không chỉ bản mới nhất. Version chưa cài vẫn hiện kèm nhãn "Not installed", lý do và link mở Runtimes; `Create` bị disable.
+- Tên rỗng hoặc trùng device hiện tại bị chặn bằng validation inline; device type/runtime khác platform bị chặn.
+- `device_create` trả device `Shutdown`; app chọn row mới, inspector hiện `Boot & Open`, cập nhật count sidebar và deviceCount của runtime.
+- Danh sách device không có button lặp trên từng row; CTA chính nằm trong inspector và đổi theo state (`Open Device` / `Boot & Open` / `Install Runtime`).
+
+### 9.5 Runtimes theo version
+
+- Mỗi runtime là một row theo platform + version, hiển thị installed/not installed, dung lượng, source và số device đang dùng. Không gộp iOS 27.0 và iOS 26.4 thành một row.
+- `Install` chạy trong row với progress và `Cancel`; download chỉ dùng version Xcode 27 còn hỗ trợ. `Add Runtime` mở sheet native:
+  - `Download`: chọn platform + version có trong catalog; version đã cài bị disable.
+  - `From File`: chọn `.dmg`, import qua `simctl runtime add`.
+- Danh sách version lịch sử là best-effort: OpenSim không hứa liệt kê hoặc tải được mọi version Apple từng phát hành. Version ngoài catalog phải do người dùng cung cấp file; DMG cũ có thể cần Apple ID.
+- Cài xong runtime: device đang `Runtime missing` dùng runtime đó chuyển sang `Shutdown`; runtime picker của New Simulator cập nhật ngay.
+- `Remove` bị chặn khi `deviceCount > 0` và hiện `Show Devices`; khi không còn device, xác nhận native rồi xoá. Không xoá im lặng.
+
+### 9.6 Settings
+
+- Cửa sổ `Settings` scene native, mở bằng gear trên titlebar hoặc `⌘,`; bốn tab `General`, `Daemon`, `Input`, `Capabilities` dùng `TabView`/`Form` native, không tab bar tự chế.
+- General: connect automatically, client name, trạng thái daemon + Reconnect.
+- Daemon: version/protocol/pid/port/Xcode/startedAt; CLI path override + Choose; Restart có progress và lỗi; Reveal log.
+- Input: keyboard capture, paste `⌘V`, default gesture `Direct`/`Pinch`/`Rotate` (theo `GestureMode` của Plan 4), activity thumbnails, trạng thái HID.
+- Capabilities: chạy Doctor, rows `render`/`hid`/`accessibility`/`screenshot`/`video`/`watch`/`tv` kèm source, daemon health, disk free, device/runtime count; loading, error + Retry, Copy JSON. Không hiển thị token hay secret.
+
+### 9.7 Performance trong Plan 4
+
+- `AppFeature.performance` mặc định `false` trong Plan 4; sidebar và view Performance bị ẩn hoàn toàn, không có shell rỗng hay tab chết.
+- Plan 5 nối dữ liệu thật rồi bật flag; Performance vẫn nằm trong scope cuối, chỉ tạm ẩn trong giai đoạn app chưa có metrics.
+- Khi flag tắt, daemon không cần sample metrics cho UI; sampler chỉ chạy khi có subscriber hoặc flag bật.
 
 ## 10. Storage manager
 
@@ -445,7 +502,7 @@ Trong phạm vi plan 5: runtime do người dùng cài và xoá được bằng 
 
 ## 11. Performance
 
-- Sample mỗi giây từ daemon.
+- Sample mỗi giây từ daemon khi `AppFeature.performance` bật hoặc có subscriber; Plan 4 ẩn UI, Plan 5 bật sau khi nối dữ liệu thật.
 - CPU: delta CPU time của process / wall time; chuẩn hoá theo số core.
 - RAM: `rusage_info_v4.ri_phys_footprint` qua `proc_pid_rusage`.
 - Process mapping:
@@ -453,9 +510,9 @@ Trong phạm vi plan 5: runtime do người dùng cài và xoá được bằng 
   - Process con của `launchd_sim` thuộc device đó.
   - `SIMULATOR_UDID` trong environment là nguồn phụ nếu đọc được.
   - Process không map được gom vào nhóm `unknown` và hiển thị riêng.
-- Ring buffer 10 phút, sample 1 giây; UI chỉ subscribe khi tab Performance mở.
+- Ring buffer 10 phút, sample 1 giây; UI chỉ subscribe khi Performance được bật và view mở.
 - Ngưỡng cảnh báo mặc định: CPU > 150% trong 30 giây, RAM > 2 GB, disk free < 10 GB. Ngưỡng cấu hình được.
-- Hành động: terminate app, shutdown device; kill process tùy ý không có trong UI mặc định.
+- Hành động terminate app/shutdown device thuộc device window/inspector, đi qua daemon operation với lease/audit; Performance tab chỉ đọc metrics và không gọi Bridge write trực tiếp. Kill process tùy ý không có trong UI mặc định.
 - Giới hạn: không đo GPU, không thay Instruments; số liệu là ước lượng từ kernel.
 
 ## 12. Security và an toàn
@@ -504,13 +561,19 @@ Trong phạm vi plan 5: runtime do người dùng cài và xoá được bằng 
 - Test a11y: `ui_tree` chứa element với identifier đã biết; `ui_find` trả đúng.
 - Test lease: hai session tranh control; observe đọc được; takeover; lease expiry.
 - Test daemon: start/stop/restart, token sai, Host sai, SSE reconnect.
+- Test device create: tên trùng, runtime chưa cài, sai platform; device mới ở `Shutdown`.
+- Test runtime: import `.dmg` qua bridge giả hoặc fixture; version ngoài catalog trả `runtime_version_unavailable`; cài xong device `Runtime missing` chuyển `Shutdown`; delete bị chặn khi còn device.
 - Test storage: scan fixture directories, size, safe flags, plan/apply, chặn item in-use.
 - Test perf: process mapping với device booted; sample có dữ liệu; ngưỡng cảnh báo.
 - Test CLI JSON golden và MCP contract (tools/list, tools/call, errors).
 
 ### 14.3 UI
 
-- XCUITest cho app: mở device, boot, screenshot hiển thị, switch device, lease banner, storage sheet, performance tab.
+- XCUITest cho app: mở device, boot, screenshot hiển thị, switch device, lease banner, storage sheet, performance tab (khi flag bật).
+- XCUITest New Simulator: mở bằng `+`/`⌘N`, tạo device, validation tên trùng, runtime thiếu bị chặn, row mới được chọn.
+- XCUITest Runtimes: cài version cũ có trong catalog, import từ file, cancel progress, Add Runtime; device chờ runtime chuyển `Shutdown`; Remove bị chặn khi còn device.
+- XCUITest Settings: mở bằng `⌘,`/gear, bốn tab, Doctor loading/error/retry, không lộ token.
+- XCUITest lease: khi harness giữ lease, mọi tap/key trong device window không tới Bridge và overlay bị disable.
 - Checklist thị giác thủ công: từng màn, trạng thái rỗng/lỗi/đang tải; kiểm tra trên màn nhỏ và Retina.
 - Đo fps/latency bằng instrument nội bộ và screenshot; ghi số thật vào báo cáo plan.
 
@@ -544,8 +607,8 @@ Mỗi plan là một nhát cắt hoàn chỉnh có test và tài liệu; không 
 | 1 | Core + Bridge + lifecycle + CLI nhóm device/runtime/app/log | CLI chạy trọn lifecycle trên device thật; golden JSON; doctor |
 | 2 | Screen + input + UI tree + CLI `ui` | Tap/swipe/type/selector/screenshot/record/tree hoạt động; integration test |
 | 3 | Daemon + session/lease + MCP stdio/HTTP | MCP contract test; đa session; auth; SSE; tài liệu tool |
-| 4 | App macOS | Device windows, full gesture, quick switch, agent activity; tab Storage/Performance có shell và trạng thái lỗi, dữ liệu thật nối ở plan 5 |
-| 5 | Storage + performance | Scan/plan/apply; metric; CLI/MCP/UI đầy đủ; test |
+| 4 | App macOS | Device windows, full gesture, quick switch, agent activity; Devices + New Simulator, Runtimes theo version + Add Runtime, Settings/Doctor; Storage shell; Performance ẩn sau flag và nối ở plan 5 |
+| 5 | Storage + performance | Scan/plan/apply fail-closed; metric; CLI/MCP/UI đầy đủ; bật Performance flag; test |
 | 6 | watchOS/tvOS parity | Ma trận iOS/iPadOS/watchOS/tvOS; fixture; input maps; test |
 | 7 | Hardening + đóng gói + release simulator | Homebrew, notarize, docs, CI xanh, security review |
 | 8 | visionOS | Platform adapter, fixture, render/input; test |
@@ -557,7 +620,7 @@ Quy tắc plan:
 
 - Plan 0 là spike, code vứt đi; kết quả là báo cáo quyết định.
 - Plan 1-2 có thể chạy CLI trực tiếp qua Bridge nếu daemon chưa có; khi daemon xuất hiện, CLI chuyển sang client mà không đổi lệnh.
-- Plan 4 không dùng mock; tab Storage/Performance có thể hiển thị "chưa có dữ liệu" cho đến plan 5, nhưng UI shell và trạng thái lỗi phải hoàn chỉnh.
+- Plan 4 không dùng mock; Storage có shell và trạng thái lỗi trước plan 5. Performance bị ẩn hoàn toàn sau `AppFeature.performance=false`; Plan 5 nối dữ liệu thật và bật flag.
 - Plan 6 không đụng kiến trúc lõi; chỉ thêm platform adapter và fixture.
 - Plan 7 chỉ bắt đầu khi acceptance criteria của plan 1-6 đạt.
 - Plan 8 và 9 là sau release simulator; không chặn phạm vi release 1-7.
@@ -567,18 +630,21 @@ Quy tắc plan:
 ### 17.1 Kịch bản end-to-end
 
 1. Máy sạch có macOS 27 + Xcode 27.1: cài qua Homebrew, `opensim doctor` pass.
-2. `opensim device boot "iPhone Air" --wait` thành công.
+2. `opensim device boot --device "iPhone Air" --wait` thành công.
 3. `opensim app install` + `launch` fixture app thành công.
 4. `opensim ui tree` trả element có identifier ổn định.
-5. `opensim ui tap --on 'id=login-button'` đổi UI; `opensim ui type` nhập được text.
+5. `opensim ui tap --on 'id=fixture-primary-button'` đổi UI; `opensim ui type` nhập được text.
 6. `opensim ui screenshot` trả ảnh đúng trạng thái.
 7. MCP client kết nối stdio và HTTP, thực hiện lại được chuỗi trên.
 8. Hai agent cùng lúc: một agent giữ control, agent kia nhận `lease_conflict` rõ ràng; observer vẫn đọc được.
-9. Mở app: thấy device, boot, live screen, gesture, switch device, take control từ agent.
-10. Storage scan báo size; clean plan/apply dọn đúng, chặn item in-use.
-11. Performance hiển thị CPU/RAM của device đang chạy; ngưỡng cảnh báo hoạt động.
-12. watchOS/tvOS: boot, render, screenshot, tap fixture thành công.
-13. `opensim doctor` phát hiện đúng khi thiếu Xcode hoặc Xcode sai version.
+9. Mở app: thấy device, boot, live screen, gesture, switch device, take control từ agent; khi agent giữ lease, input trong device window bị chặn.
+10. New Simulator tạo device từ runtime đã cài; tên trùng/runtime thiếu bị chặn rõ ràng; device mới ở `Shutdown`.
+11. Runtimes cài được version cũ có trong catalog và import được `.dmg`; device chờ runtime chuyển `Shutdown`; Remove bị chặn khi còn device.
+12. Settings mở bằng `⌘,`/gear; Doctor chạy được, lỗi có Retry; không lộ token.
+13. Storage scan báo size; clean plan/apply dọn đúng, chặn item in-use; inventory lỗi thì không cho clean.
+14. Performance (khi flag bật) hiển thị CPU/RAM của device đang chạy; ngưỡng cảnh báo hoạt động.
+15. watchOS/tvOS: boot, render, screenshot, tap fixture thành công.
+16. `opensim doctor` phát hiện đúng khi thiếu Xcode hoặc Xcode sai version.
 
 ### 17.2 Chỉ số mục tiêu
 
@@ -604,6 +670,7 @@ Quy tắc plan:
 | Storage size sai do APFS clone | Thấp | Allocated size + ghi approximate; so sánh trong test |
 | Process mapping thiếu UDID | Trung bình | argv `launchd_sim`, env, process tree; nhóm unknown |
 | Xcode update phá vỡ | Cao | Version gate, compat mode, release notes, test matrix |
+| Runtime version cũ không tương thích Xcode 27 | Trung bình | Catalog best-effort; import DMG qua `simctl runtime add` có verify; UI ghi source; không hứa mọi version lịch sử |
 | Chính sách Apple với private API | Trung bình | Local/open-source, không App Store, README rõ; tư vấn pháp lý trước release |
 | Phạm vi phình | Cao | Plans, non-goals, acceptance criteria; mọi tính năng mới cần spec bổ sung |
 
@@ -620,6 +687,11 @@ Quy tắc plan:
 - Lease TTL 5 phút, heartbeat 30 giây, takeover grace 3 giây.
 - Storage clean plan token TTL 5 phút, dùng một lần.
 - Release simulator gồm iOS/iPadOS/watchOS/tvOS (plan 7). visionOS (plan 8) và thiết bị thật (plan 9) là các plan sau release.
+- UI native-only; Settings là `Settings` scene riêng, mở bằng gear và `⌘,`; không tab bar tự chế.
+- Performance giữ trong scope nhưng ẩn sau `AppFeature.performance=false` ở Plan 4, bật ở Plan 5.
+- Runtime hỗ trợ nhiều version song song: download version Xcode hỗ trợ hoặc import `.dmg`; danh sách lịch sử là best-effort, không hứa đầy đủ.
+- Xoá runtime bị chặn khi còn device tham chiếu. New Simulator luôn tạo device `Shutdown`.
+- Default gesture của app là `Direct` / `Pinch` / `Rotate`, khớp `GestureMode` của Plan 4.
 
 ## 20. Bằng chứng môi trường
 

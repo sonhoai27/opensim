@@ -1623,7 +1623,27 @@ public func makeDisplaySurface(for device: DeviceID) throws -> any DisplaySurfac
 
 `live` tạo gate, `SimctlScreenService`, surface factory theo `gate.render` (`SimDisplaySurface`, `IOSurfaceDisplaySurface`, `ScreenshotPollingSurface`). Input: `ViewEventInputService` nếu `.simulatorKit`, `XCUITestInputService` nếu helper, bọc `CompositeInputService`; primary multi-touch/button chỉ true khi gate report đã xác minh. Accessibility: `SimAccessibilityService` nếu `.simAccessibilityManager`, `XCUITestAccessibilityService` nếu `.xcuiTest`, ngược lại nil.
 
-`BridgeOperationExecutor` thêm `automation` optional và case `screen_info`, `screen_screenshot`, `screen_record_start`, `screen_record_stop`, `ui_tree`, `ui_find`, `ui_wait`, `ui_act`, `ui_tap`, `ui_swipe`, `ui_long_press`, `ui_drag`, `ui_pinch`, `ui_rotate`, `ui_scroll`, `ui_type`, `ui_key`, `ui_button`. Mẫu:
+`BridgeOperationExecutor` thêm property và init parameter:
+
+```swift
+public let automation: UIAutomationService?
+
+public init(
+    bridge: any SimulatorBridge,
+    crashReports: (any CrashReportReading)? = nil,
+    doctor: (any DoctorReporting)? = nil,
+    catalog: OperationCatalog = .plan1(),
+    automation: UIAutomationService? = nil
+) {
+    self.bridge = bridge
+    self.crashReports = crashReports
+    self.doctor = doctor
+    self.catalog = catalog
+    self.automation = automation
+}
+```
+
+Thêm case `screen_info`, `screen_screenshot`, `screen_record_start`, `screen_record_stop`, `ui_tree`, `ui_find`, `ui_wait`, `ui_act`, `ui_tap`, `ui_swipe`, `ui_long_press`, `ui_drag`, `ui_pinch`, `ui_rotate`, `ui_scroll`, `ui_type`, `ui_key`, `ui_button`. Mẫu:
 
 ```swift
 case "ui_tap":

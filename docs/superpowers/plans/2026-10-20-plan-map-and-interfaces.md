@@ -142,6 +142,12 @@ public struct Device: Codable, Sendable, Identifiable {
     public var lastBootedAt: Date?
 }
 
+public enum RuntimeSource: String, Codable, Sendable {
+    case system
+    case xcodeCatalog = "xcode_catalog"
+    case file
+}
+
 public struct Runtime: Codable, Sendable, Identifiable {
     public let id: RuntimeID
     public var name: String
@@ -150,6 +156,9 @@ public struct Runtime: Codable, Sendable, Identifiable {
     public var build: String
     public var isAvailable: Bool
     public var path: String?
+    public var sizeBytes: Int64? = nil
+    public var source: RuntimeSource? = nil
+    public var deviceCount: Int? = nil
 }
 
 public struct AppInfo: Codable, Sendable, Identifiable {
@@ -209,7 +218,7 @@ public struct ElementSelector: Codable, Sendable {
     public var text: String?
 }
 
-public enum StorageCategory: String, Codable, Sendable {
+public enum StorageCategory: String, Codable, Sendable, CaseIterable {
     case simulatorDevice, simulatorCache, simulatorLog, runtime, derivedData, archive, appData
 }
 
@@ -372,6 +381,7 @@ public protocol DeviceControlling: Sendable {
 
 public protocol RuntimeControlling: Sendable {
     func listRuntimes() async throws -> [Runtime]
+    func downloadRuntime(platform: Platform, version: String) async throws -> Runtime
     func installRuntime(at path: String) async throws -> Runtime
     func deleteRuntime(_ id: RuntimeID) async throws
 }

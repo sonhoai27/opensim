@@ -502,9 +502,12 @@ Append vào `Tests/OpenSimProtocolTests/ProtocolCodingTests.swift` trước dấ
         XCTAssertEqual(decoded.type.rawValue, "device.state.changed")
     }
 
-    func testPlan3CatalogAddsSessionTools() {
+    func testPlan3CatalogAddsSessionAndUITools() {
         let catalog = OperationCatalog.plan3()
-        XCTAssertEqual(catalog.mcpOperations().count, 25)
+        let names = Set(catalog.mcpOperations().map(\.mcpName))
+        XCTAssertTrue(names.isSuperset(of: [
+            "session_acquire", "session_release", "ui_tap", "ui_tree", "screen_screenshot"
+        ]))
         XCTAssertNotNil(catalog.operation(forMCP: "session_acquire"))
         XCTAssertEqual(catalog.operation(forCLI: ["session", "release"])?.mcpName, "session_release")
     }
@@ -732,7 +735,7 @@ import Foundation
 
 public extension OperationCatalog {
     static func plan3() -> OperationCatalog {
-        var catalog = OperationCatalog.plan1()
+        var catalog = OperationCatalog.plan2()
         for operation in Plan3Operations.all {
             catalog.register(operation)
         }
@@ -1913,9 +1916,9 @@ final class OperationDispatcherTests: XCTestCase {
 
     func testOptionalServiceReturnsCapabilityUnavailable() async throws {
         let extra = Operation(
-            cliPath: ["ui", "tap"],
-            mcpName: "ui_tap",
-            summary: "Tap",
+            cliPath: ["test", "capability"],
+            mcpName: "test_capability",
+            summary: "Capability probe",
             requiresControlLease: false,
             destructive: false,
             readOnly: false,
@@ -1927,7 +1930,7 @@ final class OperationDispatcherTests: XCTestCase {
         let (dispatcher, _, _, _) = makeServices(catalog: catalog)
         do {
             _ = try await dispatcher.dispatch(OperationRequest(
-                operation: "ui_tap",
+                operation: "test_capability",
                 parameters: ["device": udid.rawValue]
             ))
             XCTFail("expected capability_unavailable")
@@ -3700,13 +3703,24 @@ public enum DaemonRunner {
         let xcode = try locator.version(developerDir: developerDir)
         let bridge = try SimctlBridge.live(timeout: .seconds(120))
         let catalog = OperationCatalog.plan3()
+        let automation = UIAutomationService(
+            screen: bridge.screen,
+            input: bridge.input,
+            accessibility: bridge.accessibility
+        )
         let sessions = SessionManager()
         let leases = LeaseManager()
         let events = EventHub()
         let audit = AuditWriter(fileURL: paths.auditFile)
         let dispatcher = OperationDispatcher(
             catalog: catalog,
-            executor: BridgeOperationExecutor(bridge: bridge, crashReports: bridge, doctor: bridge, catalog: catalog),
+            executor: BridgeOperationExecutor(
+                bridge: bridge,
+                crashReports: bridge,
+                doctor: bridge,
+                catalog: catalog,
+                automation: automation
+            ),
             bridge: bridge,
             sessions: sessions,
             leases: leases,
@@ -4915,10 +4929,12 @@ final class MCPHandlerTests: XCTestCase {
             params: nil
         ))
         let tools = try XCTUnwrap(response?.result?["tools"]?.arrayValue)
-        XCTAssertEqual(tools.count, 25)
         let names = Set(tools.compactMap { $0["name"]?.stringValue })
         XCTAssertTrue(names.contains("device_boot"))
         XCTAssertTrue(names.contains("session_acquire"))
+        XCTAssertTrue(names.contains("ui_tap"))
+        XCTAssertTrue(names.contains("ui_tree"))
+        XCTAssertTrue(names.contains("screen_screenshot"))
         XCTAssertFalse(names.contains("log_crash"))
     }
 
@@ -5765,7 +5781,10 @@ final class MCPHTTPTests: XCTestCase {
         let (listData, listResponse) = try await URLSession.shared.data(for: list)
         XCTAssertEqual((listResponse as? HTTPURLResponse)?.statusCode, 200)
         let listed = try JSONDecoder().decode(JSONRPCResponse.self, from: listData)
-        XCTAssertEqual(listed.result?["tools"]?.arrayValue?.count, 25)
+        let tools = try XCTUnwrap(listed.result?["tools"]?.arrayValue)
+        let names = Set(tools.compactMap { $0["name"]?.stringValue })
+        XCTAssertTrue(names.contains("ui_tap"))
+        XCTAssertTrue(names.contains("session_acquire"))
     }
 
     func testRequestWithoutSessionHeaderIsRejected() async throws {
@@ -6128,6 +6147,11 @@ final class CatalogCLIParityTests: XCTestCase {
         }
     }
 
+    // Integration test bắt buộc trong Plan3DaemonIntegrationTests:
+    // boot fixture, chạy `opensim ui tap --device <udid> --x 10 --y 10 --json`;
+    // assert output không có `unknown_operation`; nếu HID/a11y thiếu thì lỗi
+    // `capability_unavailable` phải nêu đúng capability.
+
     private func collect(_ command: any ParsableCommand.Type, prefix: [String]) -> Set<String> {
         let configuration = command.configuration
         let path = prefix + [configuration.commandName]
@@ -6364,7 +6388,7 @@ EOF
 kill "$DAEMON_PID"
 ```
 
-Expected: ba dòng JSON-RPC; dòng 1 có `"protocolVersion":"2025-06-18"`; dòng 2 có 25 tool; dòng 3 có `"code":-32602`. Không có token trong output.
+Expected: ba dòng JSON-RPC; dòng 1 có `"protocolVersion":"2025-06-18"`; dòng 2 có tool list khớp catalog, gồm `ui_tap`/`ui_tree`/`screen_screenshot`; dòng 3 có `"code":-32602`. Không có token trong output.
 
 - [ ] **Step 5: Commit**
 
@@ -6405,8 +6429,9 @@ Ngoài phạm vi Plan 3: `screen_*`, `ui_*` (Plan 2: `docs/superpowers/plans/202
 - Lease conflict trả `lease_conflict` kèm owner/expiresAt; lease hết hạn trả `lease_revoked`; takeover thay lease control; observe nhiều owner.
 - Request sai token trả 401; Host/Origin ngoài loopback trả 403; `/v1/health` không cần token nhưng vẫn kiểm tra Host.
 - `/v1/events` và `/mcp` GET dùng SSE, replay theo `Last-Event-ID`; MCP POST yêu cầu `Mcp-Session-Id` sau initialize.
-- `tools/list` lấy đúng 25 tool từ catalog Plan 3; tool Plan 2/5 sẽ xuất hiện tự động khi catalog được mở rộng.
+- `tools/list` lấy đúng catalog Plan 3 (gồm `ui_*`/`screen_*`); tool Plan 5/9 xuất hiện tự động khi catalog được mở rộng.
 - MCP `initialize`, `tools/list`, `tools/call` success và error contract pass; business error nằm trong `structuredContent.error`, protocol error dùng JSON-RPC code.
 - CLI mặc định dùng daemon; `--direct` vẫn chạy cho doctor/test; `opensim daemon start/stop/restart/status/logs` hoạt động.
+- `opensim ui tap`, `ui tree`, `ui screenshot` qua daemon backend tới đúng `UIAutomationService`/automation; không trả `unknown_operation`; khi HID/a11y thiếu trả `capability_unavailable` có capability rõ ràng.
 - Không có storage/perf implementation, không có app UI, không có browser automation.
 

@@ -1567,6 +1567,9 @@ public enum ErrorCode: String, Codable, Sendable, CaseIterable {
     case deviceNotFound = "device_not_found"
     case deviceNotBooted = "device_not_booted"
     case deviceBusy = "device_busy"
+    case deviceNameConflict = "device_name_conflict"
+    case runtimeVersionUnavailable = "runtime_version_unavailable"
+    case runtimeInUse = "runtime_in_use"
     case leaseRequired = "lease_required"
     case leaseConflict = "lease_conflict"
     case leaseRevoked = "lease_revoked"
@@ -1733,6 +1736,8 @@ public enum OpenSimExitCode: Int32, Sendable, CaseIterable {
             return .notFound
         case ErrorCode.deviceNotBooted.rawValue,
              ErrorCode.deviceBusy.rawValue,
+             ErrorCode.deviceNameConflict.rawValue,
+             ErrorCode.runtimeInUse.rawValue,
              ErrorCode.leaseRequired.rawValue,
              ErrorCode.leaseConflict.rawValue,
              ErrorCode.leaseRevoked.rawValue,
@@ -1741,7 +1746,8 @@ public enum OpenSimExitCode: Int32, Sendable, CaseIterable {
         case ErrorCode.unsupportedXcode.rawValue,
              ErrorCode.privateApiUnavailable.rawValue,
              ErrorCode.a11yUnavailable.rawValue,
-             ErrorCode.capabilityUnavailable.rawValue:
+             ErrorCode.capabilityUnavailable.rawValue,
+             ErrorCode.runtimeVersionUnavailable.rawValue:
             return .unsupported
         case ErrorCode.xcodeNotFound.rawValue,
              ErrorCode.permissionDenied.rawValue:
@@ -7389,6 +7395,19 @@ git commit -m "test(integration): add settings and lifecycle simulator tests"
 
 ---
 
+## Runtime Version Addendum — 2026-10-20
+
+> Phần này mở rộng runtime cho nhiều version, cần cho New Simulator/Runtimes của Plan 4. Không thay đổi lifecycle device.
+
+- `Runtime` thêm optional `sizeBytes: Int64?`, `source: RuntimeSource?`, `deviceCount: Int?` (optional để decode `simctl` cũ không fail); thêm enum `RuntimeSource: String, Codable, Sendable { case system, xcodeCatalog = "xcode_catalog", file }`.
+- `RuntimeControlling` thêm `func downloadRuntime(platform: Platform, version: String) async throws -> Runtime`.
+- Tạo `Sources/OpenSimBridge/Services/XcodebuildRuntimeDownloader.swift`: chạy `xcodebuild -downloadPlatform <iOS|watchOS|tvOS> -buildVersion <version>` bằng `Process` argument array, không shell string. `SimctlRuntimeService.downloadRuntime` gọi downloader, sau đó `listRuntimes()` và trả runtime khớp `platform + version`; không thấy thì throw `runtime_version_unavailable`.
+- Thêm operation `runtime_download` vào `Plan1Operations.all`: `cliPath: ["runtime", "download"]`, `mcpName: "runtime_download"`, parameters `platform` và `version`, write, không destructive, `requiresControlLease: false` (không gắn device; vẫn cần session/auth daemon). `BridgeOperationExecutor` route sang `downloadRuntime`.
+- Thêm `RuntimeDownloadCommand` (`--platform`, `--version`) vào `RuntimeCommand.subcommands`; JSON trả `Runtime`.
+- `runtime_list` của daemon enrich `deviceCount` bằng cách đếm device có `runtime` khớp ID; bridge không tự biết device. `source` lấy `system` cho runtime hệ thống, `file` khi import qua path, `xcodeCatalog` khi download.
+- Test: fake downloader xác nhận đúng platform/version; version không có trong catalog trả `runtime_version_unavailable`; không chạy download thật trong CI. Integration tải thật chỉ chạy khi owner bật `OPENSIM_RUNTIME_DOWNLOAD=1`.
+- UI Plan 4 hiển thị progress không xác định khi download; import file hiển thị progress qua `simctl runtime add`.
+
 ## Spec coverage
 
 | Mục spec | Nội dung | Task |
@@ -7411,6 +7430,8 @@ git commit -m "test(integration): add settings and lifecycle simulator tests"
 Phần ngoài Plan 1: `ui`, screen/input/a11y (Plan 2), daemon/session/MCP (Plan 3: `docs/superpowers/plans/2026-10-20-opensim-plan-3-daemon-session-mcp.md`), app macOS (Plan 4), storage/perf (Plan 5), watch/tv parity (Plan 6), `app data export/import`, `device pair/location/appearance/privacy/push/openurl/pasteboard` (các plan sau đăng ký catalog operation tương ứng).
 
 ## Exit criteria
+
+- `runtime list` trả nhiều version; `runtime download` chỉ cài version Xcode hỗ trợ; `runtime install <path>` import `.dmg`; version không hỗ trợ trả `runtime_version_unavailable`; CI dùng fake downloader, không tải thật.
 
 - `swift build` thành công trên macOS 27 với Xcode 27.1.
 - `swift test` chạy toàn bộ unit test của `OpenSimCoreTests`, `OpenSimBridgeTests`, `OpenSimCLITests` và pass.

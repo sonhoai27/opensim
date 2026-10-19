@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Dựng `OpenSim.app` native bằng SwiftUI + AppKit: sidebar device thật từ daemon, nhiều cửa sổ device render trực tiếp bằng `SimulatorScreenView`, gesture parity theo `InputControlling` của Plan 2, lease/takeover, quick switch `Cmd+K`, menu bar extra, agent activity, settings, capabilities/doctor; tab Storage và Performance là shell hoàn chỉnh với loading/error/empty/unavailable nhưng chưa nối dữ liệu Plan 5.
+**Goal:** Dựng `OpenSim.app` native bằng SwiftUI + AppKit: sidebar native với Devices/Runtimes/Storage/Activity, bảng device + inspector, New Simulator, Runtimes theo version/Add Runtime, nhiều cửa sổ device render trực tiếp bằng `SimulatorScreenView`, gesture parity theo `InputControlling` của Plan 2, lease/takeover, quick switch `Cmd+K`, menu bar extra, agent activity, Settings scene và capabilities/doctor. Storage có shell; Performance ẩn sau `AppFeature.performance=false` và nối ở Plan 5.
 
 **Architecture:** `OpenSimApp` là composition root duy nhất. Device list, lifecycle, session, lease, audit và SSE đi qua daemon client của Plan 3. Render, input, screenshot, record và doctor đi trực tiếp qua `SimctlBridge` trong process. `SimulatorScreenView` của Plan 2 được dùng đúng public API; chỉ thêm extension additive. Không có model device thứ hai, không có lifecycle riêng, không có mock data.
 
@@ -17,6 +17,7 @@
 **Plan 3:** `docs/superpowers/plans/2026-10-20-opensim-plan-3-daemon-session-mcp.md`
 
 **Plan 5:** `docs/superpowers/plans/2026-10-20-opensim-plan-5-storage-performance.md`
+
 ## Global Constraints
 
 - Chỉ tạo/sửa file dưới `App/`, `App/project.yml`, `Tests/OpenSimAppUITests/`. Không sửa spec, contract, Plan 1-3, Plan 5, `Package.swift`, hay module khác.
@@ -24,10 +25,10 @@
 - Swift 6 language mode, strict concurrency complete. UI state là `@MainActor`; type qua task phải `Sendable`.
 - Không mock data trong app. Device, state, lease, audit, capability, doctor đều lấy từ daemon hoặc Bridge thật. UI test dùng daemon/device thật; thiếu điều kiện thì `XCTSkip` kèm lý do.
 - Không tạo lifecycle path thứ hai. Boot/shutdown/erase/delete chỉ gọi operation của daemon. App không gọi `simctl` trực tiếp, không gọi `SimDevice`/CoreSimulator. Render, input, screenshot, record, doctor dùng `SimctlBridge` in-process.
-- Device presentation: chỉ cửa sổ riêng qua `WindowGroup(id: "device")`; không có chế độ tab hoặc embedded device pane, không có tab top-level "Device Window". Top-level tabs chỉ Devices/Storage/Performance/Activity.
+- Device presentation: chỉ cửa sổ riêng qua `WindowGroup(id: "device")`; không có chế độ tab hoặc embedded device pane, không có tab top-level "Device Window". Sidebar chỉ Devices/Runtimes/Storage/Activity; Performance chỉ hiện khi `AppFeature.performance=true`.
 - Dùng đúng public API `SimulatorScreenView`: `init(device:) throws`, `init(device:bridge:)`, `connect() async throws`, `disconnect()`, `screenSize`, `onScreenSizeChange`, `onError`, `rotation`, `setRotation(_:)`, `simulatorPoint(fromViewPoint:)`, `viewPoint(fromSimulatorPoint:)`. Không đổi tên hay signature. Extension additive duy nhất là `isReadyForInput`.
 - App định nghĩa `DaemonClient` trong module `OpenSimApp` để Plan 5 mở rộng. Transport của Plan 3 luôn viết đủ `OpenSimDaemon.DaemonClient` để tránh nhầm tên.
-- Storage/Performance không hiển thị số liệu giả. Khi daemon thiếu endpoint, hiện đúng thông điệp "not connected" kèm lý do, Retry và lối mở Doctor. Empty state chỉ hiện khi probe xác nhận service có mặt.
+- Storage không hiển thị số liệu giả. Khi daemon thiếu endpoint, hiện đúng thông điệp "not connected" kèm lý do, Retry và lối mở Doctor. Performance không có shell/tab khi flag tắt; Plan 5 bật sau khi nối metrics.
 - `Cmd+V` dán text vào simulator qua `InputControlling.typeText`. Copy từ simulator sang Mac cần operation `device_pasteboard`; Plan 1 hoãn operation này nên menu Copy bị disable kèm lý do, không giả lập.
 - Toolbar Rotate xoay presentation qua `setRotation`; xoay orientation thiết bị không thuộc Plan 2 và không được tuyên bố trong plan này.
 - Take control mở sheet xác nhận, hiện owner, hạn lease, hậu quả; focus mặc định vào Cancel.
@@ -47,7 +48,8 @@
 | Input | `InputControlling` của `SimctlBridge` | Chỉ gửi khi app giữ lease `control` |
 | Screenshot/record | `ScreenControlling` | Ghi qua `NSSavePanel` hoặc thư mục recordings |
 | Doctor | `DoctorReporting`; fallback operation `doctor_report` | CLI doctor vẫn là đường chính thức |
-| Storage/Performance | Endpoint Plan 5 | Plan 4 chỉ probe và hiện shell |
+| Storage | Endpoint Plan 5 | Plan 4 chỉ probe và hiện shell |
+| Performance | Endpoint Plan 5 | Plan 4 ẩn sau `AppFeature.performance=false`; Plan 5 bật |
 
 App tạo session `clientKind = "app"`, `clientName` từ Settings. Daemon restart đổi token và session; app tạo session mới, tăng `generation`, cửa sổ acquire lại lease. Không tái dùng session cũ.
 
@@ -89,12 +91,12 @@ Nếu Plan 2 đổi API trước khi implement, dừng task và báo lệch cont
 
 `InputControlling` không có arbitrary N-point touch. Plan 4 không bịa API; multi-touch được đại diện bằng pinch, rotate, scroll là các gesture hai ngón thật. Hạn chế này ghi trong checklist thủ công.
 
-### Storage/Performance shell
+### Storage shell và Performance flag
 
-- Tab mở thì `ServiceShellModel` probe endpoint thật: Storage `GET /v1/storage/scans/00000000-0000-0000-0000-000000000000`, Performance `GET /v1/perf/devices`.
-- Response có envelope OpenSim nghĩa là route/service tồn tại. HTTP 404/405 không có envelope nghĩa là service chưa nối. Lỗi transport là error state có Retry.
-- Không hiển thị byte, sparkline, process table giả. Không tự tạo scan.
-- Plan 5 thay `StorageShellView`/`PerformanceShellView` bằng `StorageTabView`/`PerformanceTabView`, giữ `AppTab`, `AppShell`, `DaemonClient` và identifier sidebar.
+- Storage shell probe endpoint thật `GET /v1/storage/scans/00000000-0000-0000-0000-000000000000`; response có envelope nghĩa là service tồn tại. HTTP 404/405 là unavailable; lỗi transport là error state có Retry.
+- Không hiển thị byte hay scan giả; không tự tạo scan.
+- Performance không có shell trong Plan 4: `AppFeature.performance=false`, sidebar/view không tồn tại. Plan 5 nối metrics thật rồi bật flag và thay `StorageShellView` bằng `StorageTabView`.
+- `DaemonClient` vẫn là struct `Sendable`; protocol app-side của Plan 5 phải là `Sendable`, không `AnyObject`/`@MainActor` class-bound.
 
 ### App DaemonClient và điểm nối Plan 5
 
@@ -134,16 +136,16 @@ Plan 5 thêm `extension DaemonClient: StorageAPIClient` và `PerformanceAPIClien
 | `App/Sources/OpenSimApp/App/DeviceWindowManager.swift` | Mở, focus, registry cửa sổ | 3 |
 | `App/Sources/OpenSimApp/App/LeaseConflict.swift` | Map `lease_conflict` | 3, 7 |
 | `App/Sources/OpenSimApp/App/ServiceProbeResult.swift` | Kết quả probe service | 2 |
+| `App/Sources/OpenSimApp/App/AppFeature.swift` | Feature flag `performance` | 1 |
 | `App/Sources/OpenSimApp/Sidebar/DeviceCatalogModel.swift` | Device, lease, lifecycle, preview | 3 |
-| `App/Sources/OpenSimApp/Sidebar/DeviceGrouping.swift` | Nhóm platform/runtime, sort | 3 |
-| `App/Sources/OpenSimApp/Sidebar/DeviceSidebarModel.swift` | Search, filter | 3 |
-| `App/Sources/OpenSimApp/Sidebar/DeviceSidebarView.swift` | Danh sách, runtime section | 3 |
-| `App/Sources/OpenSimApp/Sidebar/DeviceRowView.swift` | Row, badge, owner, power | 3 |
-| `App/Sources/OpenSimApp/Sidebar/RuntimeSectionView.swift` | Runtime read-only | 3 |
 | `App/Sources/OpenSimApp/Sidebar/DevicePreviewStore.swift` | Ảnh cuối của device booted | 3 |
-| `App/Sources/OpenSimApp/Devices/DevicesOverviewView.swift` | Grid tab Devices | 3 |
-| `App/Sources/OpenSimApp/Devices/DeviceCardView.swift` | Card, preview, action | 3 |
-| `App/Sources/OpenSimApp/Shared/StatusBadge.swift` | Badge state | 3 |
+| `App/Sources/OpenSimApp/Devices/DevicesView.swift` | `Table` + inspector, New Device | 3 |
+| `App/Sources/OpenSimApp/Devices/DeviceInspectorView.swift` | Preview, metadata, CTA | 3 |
+| `App/Sources/OpenSimApp/Devices/NewDeviceSheet.swift` | Sheet tạo device | 3 |
+| `App/Sources/OpenSimApp/Devices/NewDeviceModel.swift` | Validation và `device_create` | 3 |
+| `App/Sources/OpenSimApp/Runtimes/RuntimesView.swift` | Row theo version, Add Runtime | 3A |
+| `App/Sources/OpenSimApp/Runtimes/RuntimeModel.swift` | Install/download/remove/state | 3A |
+| `App/Sources/OpenSimApp/Runtimes/AddRuntimeSheet.swift` | Download/From File | 3A |
 | `App/Sources/OpenSimApp/Shared/EmptyStateView.swift` | Empty state | 3 |
 | `App/Sources/OpenSimApp/Shared/ErrorStateView.swift` | Error + Retry | 3 |
 | `App/Sources/OpenSimApp/Shared/LoadingStateView.swift` | Loading state | 1 |
@@ -170,11 +172,11 @@ Plan 5 thêm `extension DaemonClient: StorageAPIClient` và `PerformanceAPIClien
 | `App/Sources/OpenSimApp/QuickSwitch/QuickSwitchModel.swift` | Filter, highlight, perform | 8 |
 | `App/Sources/OpenSimApp/MenuBar/MenuBarContentView.swift` | Menu bar extra | 8 |
 | `App/Sources/OpenSimApp/MenuBar/MenuBarModel.swift` | Booted device, lease, action | 8 |
-| `App/Sources/OpenSimApp/Activity/AgentActivityView.swift` | Feed, filter, pause, detail | 9 |
+| `App/Sources/OpenSimApp/Activity/AgentActivityView.swift` | Table, filter, pause, inspector | 9 |
 | `App/Sources/OpenSimApp/Activity/AgentActivityModel.swift` | Audit history, SSE, thumbnail | 9 |
 | `App/Sources/OpenSimApp/Activity/ActivityEntry.swift` | Entry model | 9 |
-| `App/Sources/OpenSimApp/Activity/ActivityRowView.swift` | Row | 9 |
-| `App/Sources/OpenSimApp/Activity/ActivityDetailView.swift` | Chi tiết event | 9 |
+| `App/Sources/OpenSimApp/Activity/ActivityTable.swift` | Table sự kiện | 9 |
+| `App/Sources/OpenSimApp/Activity/ActivityInspector.swift` | Payload, session, Open Device | 9 |
 | `App/Sources/OpenSimApp/Settings/SettingsView.swift` | Settings window | 10 |
 | `App/Sources/OpenSimApp/Settings/GeneralSettingsView.swift` | Connection, client name | 10 |
 | `App/Sources/OpenSimApp/Settings/DaemonSettingsView.swift` | Status, CLI path, restart | 10 |
@@ -182,26 +184,26 @@ Plan 5 thêm `extension DaemonClient: StorageAPIClient` và `PerformanceAPIClien
 | `App/Sources/OpenSimApp/Settings/CapabilitiesSettingsView.swift` | Doctor, capability table | 10 |
 | `App/Sources/OpenSimApp/Settings/DoctorModel.swift` | Load doctor direct/fallback | 10 |
 | `App/Sources/OpenSimApp/Storage/StorageShellView.swift` | Storage shell đầy đủ state | 11 |
-| `App/Sources/OpenSimApp/Performance/PerformanceShellView.swift` | Performance shell đầy đủ state | 11 |
 | `App/Sources/OpenSimApp/Shared/ServiceShellModel.swift` | Probe state machine | 11 |
 | `Tests/OpenSimAppUITests/Support/TestEnvironment.swift` | Launch app, CLI path | 1, 2 |
 | `Tests/OpenSimAppUITests/Support/DaemonTestHarness.swift` | Session/lease thật qua HTTP | 7 |
 | `Tests/OpenSimAppUITests/Support/XCUIElement+OpenSim.swift` | Wait helper | 1 |
 | `Tests/OpenSimAppUITests/AppLaunchUITests.swift` | Launch, main window | 1 |
 | `Tests/OpenSimAppUITests/DaemonConnectionUITests.swift` | Status, retry | 2 |
-| `Tests/OpenSimAppUITests/DeviceSidebarUITests.swift` | Device list, search | 3 |
+| `Tests/OpenSimAppUITests/DevicesUITests.swift` | Table, inspector, search, New Simulator | 3 |
+| `Tests/OpenSimAppUITests/RuntimesUITests.swift` | Version, install, delete guard | 3A |
 | `Tests/OpenSimAppUITests/DeviceWindowUITests.swift` | Window, screen, toolbar | 4, 6 |
 | `Tests/OpenSimAppUITests/LeaseTakeoverUITests.swift` | Banner, takeover | 7 |
 | `Tests/OpenSimAppUITests/QuickSwitchUITests.swift` | `Cmd+K` | 8 |
 | `Tests/OpenSimAppUITests/SettingsUITests.swift` | Settings tabs, doctor | 10 |
-| `Tests/OpenSimAppUITests/ServiceShellUITests.swift` | Storage/Performance shell | 11 |
+| `Tests/OpenSimAppUITests/ServiceShellUITests.swift` | Storage shell; Performance ẩn | 11 |
 | `Tests/OpenSimAppUITests/ActivityUITests.swift` | Agent activity feed, pause | 9 |
 | `Tests/OpenSimAppUITests/AccessibilityUITests.swift` | Label, focus, Cancel | 12 |
 ## Build and Test Commands
 
 ```bash
 swift build
-xcodegen generate --spec App/project.yml
+xcodegen generate --spec App/project.yml --project App
 xcodebuild -project App/OpenSim.xcodeproj -scheme OpenSim -configuration Debug -destination 'platform=macOS' build
 xcodebuild test -project App/OpenSim.xcodeproj -scheme OpenSim -destination 'platform=macOS' -parallel-testing-enabled NO -only-testing:OpenSimAppUITests/AppLaunchUITests
 ```
@@ -214,7 +216,7 @@ xcodebuild test -project App/OpenSim.xcodeproj -scheme OpenSim -destination 'pla
 
 **Files:**
 - Create: `App/project.yml`
-- Create: `App/Sources/OpenSimApp/App/OpenSimApp.swift`, `App/Sources/OpenSimApp/App/AppDelegate.swift`, `App/Sources/OpenSimApp/App/AppTab.swift`, `App/Sources/OpenSimApp/App/AppShell.swift`, `App/Sources/OpenSimApp/App/AppEnvironment.swift`, `App/Sources/OpenSimApp/App/AppLog.swift`
+- Create: `App/Sources/OpenSimApp/App/OpenSimApp.swift`, `App/Sources/OpenSimApp/App/AppDelegate.swift`, `App/Sources/OpenSimApp/App/AppFeature.swift`, `App/Sources/OpenSimApp/App/AppTab.swift`, `App/Sources/OpenSimApp/App/AppShell.swift`, `App/Sources/OpenSimApp/App/AppEnvironment.swift`, `App/Sources/OpenSimApp/App/AppLog.swift`
 - Create: `App/Sources/OpenSimApp/Shared/LoadingStateView.swift`
 - Create: `Tests/OpenSimAppUITests/Support/TestEnvironment.swift`, `Tests/OpenSimAppUITests/Support/XCUIElement+OpenSim.swift`
 - Test: `Tests/OpenSimAppUITests/AppLaunchUITests.swift`
@@ -282,7 +284,7 @@ final class AppLaunchUITests: XCTestCase {
         let app = TestEnvironment.launchApp()
         addTeardownBlock { app.terminate() }
         XCTAssertTrue(app.windows["OpenSim"].waitForExistence(timeout: 20))
-        XCTAssertTrue(app.buttons["sidebar-devices"].exists)
+        XCTAssertTrue(app.cells["sidebar-devices"].exists)
         XCTAssertTrue(app.otherElements["main-sidebar"].exists)
     }
 }
@@ -291,7 +293,7 @@ final class AppLaunchUITests: XCTestCase {
 - [ ] **Step 2: Chạy để thấy fail**
 
 ```bash
-xcodegen generate --spec App/project.yml
+xcodegen generate --spec App/project.yml --project App
 xcodebuild test -project App/OpenSim.xcodeproj -scheme OpenSim -destination 'platform=macOS' -parallel-testing-enabled NO -only-testing:OpenSimAppUITests/AppLaunchUITests
 ```
 
@@ -391,12 +393,20 @@ schemes:
 ```swift
 import SwiftUI
 
+public enum AppFeature {
+    public static let performance = false
+}
+
 public enum AppTab: String, CaseIterable, Identifiable, Sendable {
-    case devices, storage, performance, activity
+    case devices, runtimes, storage, performance, activity
     public var id: String { rawValue }
+    public static var visible: [AppTab] {
+        allCases.filter { $0 != .performance || AppFeature.performance }
+    }
     public var title: String {
         switch self {
         case .devices: return "Devices"
+        case .runtimes: return "Runtimes"
         case .storage: return "Storage"
         case .performance: return "Performance"
         case .activity: return "Agent Activity"
@@ -405,6 +415,7 @@ public enum AppTab: String, CaseIterable, Identifiable, Sendable {
     public var systemImage: String {
         switch self {
         case .devices: return "iphone.gen3"
+        case .runtimes: return "shippingbox"
         case .storage: return "internaldrive"
         case .performance: return "speedometer"
         case .activity: return "waveform.path.ecg"
@@ -514,43 +525,30 @@ import SwiftUI
 
 struct AppShell: View {
     @Environment(AppEnvironment.self) private var environment
-    @State private var tab: AppTab = .devices
+    @State private var tab: AppTab? = .devices
 
     var body: some View {
         NavigationSplitView {
-            VStack(alignment: .leading, spacing: 0) {
-                Text("OpenSim")
-                    .font(.system(size: 20, weight: .semibold))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
-                ForEach(AppTab.allCases) { item in
-                    Button {
-                        tab = item
-                    } label: {
-                        Label(item.title, systemImage: item.systemImage)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(tab == item ? Color.accentColor.opacity(0.14) : Color.clear)
-                            .clipShape(RoundedRectangle(cornerRadius: 7))
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 8)
-                    .accessibilityIdentifier(item.accessibilityID)
-                    .accessibilityAddTraits(tab == item ? .isSelected : [])
+            List(selection: $tab) {
+                ForEach(AppTab.visible) { item in
+                    Label(item.title, systemImage: item.systemImage)
+                        .tag(item)
+                        .accessibilityIdentifier(item.accessibilityID)
                 }
-                Spacer()
             }
-            .frame(minWidth: 230, idealWidth: 260, maxWidth: 320)
+            .listStyle(.sidebar)
+            .navigationTitle("OpenSim")
             .accessibilityIdentifier("main-sidebar")
         } detail: {
-            switch tab {
+            switch tab ?? .devices {
             case .devices:
                 LoadingStateView("Loading devices", identifier: "devices-loading")
+            case .runtimes:
+                LoadingStateView("Loading runtimes", identifier: "runtimes-loading")
             case .storage:
                 LoadingStateView("Checking storage service", identifier: "storage-probing")
             case .performance:
-                LoadingStateView("Checking performance service", identifier: "performance-probing")
+                EmptyView()
             case .activity:
                 LoadingStateView("Loading agent activity", identifier: "activity-loading")
             }
@@ -564,7 +562,7 @@ struct AppShell: View {
 - [ ] **Step 4: Chạy để thấy pass**
 
 ```bash
-xcodegen generate --spec App/project.yml
+xcodegen generate --spec App/project.yml --project App
 xcodebuild -project App/OpenSim.xcodeproj -scheme OpenSim -configuration Debug -destination 'platform=macOS' build
 xcodebuild test -project App/OpenSim.xcodeproj -scheme OpenSim -destination 'platform=macOS' -parallel-testing-enabled NO -only-testing:OpenSimAppUITests/AppLaunchUITests
 ```
@@ -793,43 +791,67 @@ git commit -m "feat(app): connect to daemon with session and sse"
 ```
 ---
 
-### Task 3: Device catalog, sidebar, preview và boot/shutdown
+### Task 3: Devices table, inspector, New Simulator và boot/shutdown
 
 **Files:**
 - Create: `App/Sources/OpenSimApp/App/DeviceLifecycleAction.swift`, `DeviceLifecycleService.swift`, `LeaseConflict.swift`, `DeviceWindowManager.swift`
-- Create: `App/Sources/OpenSimApp/Sidebar/DeviceGrouping.swift`, `DeviceCatalogModel.swift`, `DeviceSidebarView.swift`, `DeviceRowView.swift`, `RuntimeSectionView.swift`, `DevicePreviewStore.swift`, `DeviceSidebarModel.swift`
-- Create: `App/Sources/OpenSimApp/Devices/DevicesOverviewView.swift`, `DeviceCardView.swift`
-- Create: `App/Sources/OpenSimApp/Shared/StatusBadge.swift`, `EmptyStateView.swift`, `ErrorStateView.swift`, `Formatters.swift`
-- Modify: `App/Sources/OpenSimApp/App/AppEnvironment.swift`, `App/Sources/OpenSimApp/App/AppShell.swift`
-- Test: `Tests/OpenSimAppUITests/DeviceSidebarUITests.swift`
+- Create: `App/Sources/OpenSimApp/Sidebar/DeviceCatalogModel.swift`, `DevicePreviewStore.swift`
+- Create: `App/Sources/OpenSimApp/Devices/DevicesView.swift`, `DeviceInspectorView.swift`, `NewDeviceSheet.swift`, `NewDeviceModel.swift`
+- Create: `App/Sources/OpenSimApp/Shared/EmptyStateView.swift`, `ErrorStateView.swift`, `Formatters.swift`
+- Modify: `App/Sources/OpenSimApp/App/AppEnvironment.swift`, `App/Sources/OpenSimApp/App/AppShell.swift`, `App/Sources/OpenSimApp/App/DaemonClient.swift`
+- Test: `Tests/OpenSimAppUITests/DevicesUITests.swift` (chứa cả `DevicesUITests` và `NewDeviceUITests`)
 
 **Interfaces:**
-- Consumes: `DaemonClient`; `Device`, `Runtime`, `Lease`, `LeaseMode`, `OpenSimError`, `ScreenControlling`, `Screenshot`.
-- Produces: `DeviceLifecycleService.perform(_:on:using:takeover:)`; `DeviceCatalogModel`; `DeviceWindowManager`; `DeviceSidebarView`; `DevicesOverviewView`.
+- Consumes: `DaemonClient`; `Device`, `Runtime`, `RuntimeID`, `Lease`, `LeaseMode`, `OpenSimError`, `ScreenControlling`, `Screenshot`; operation `device_create`.
+- Produces: `DeviceLifecycleService.perform(_:on:using:takeover:)`; `DeviceCatalogModel`; `DeviceWindowManager`; `DevicesView`; `DeviceInspectorView`; `NewDeviceModel`.
 
 - [ ] **Step 1: Viết UI test thất bại**
 
 ```swift
 import XCTest
 
-final class DeviceSidebarUITests: XCTestCase {
-    func testDeviceListLoadsAndSearchFilters() throws {
+final class DevicesUITests: XCTestCase {
+    func testDevicesTableSearchAndInspector() throws {
         continueAfterFailure = false
         let app = TestEnvironment.launchApp()
         addTeardownBlock { app.terminate() }
-        XCTAssertTrue(app.otherElements["device-sidebar"].waitForExistence(timeout: 25))
+        XCTAssertTrue(app.otherElements["devices-table"].waitForExistence(timeout: 25))
         if app.staticTexts["device-list-error"].exists {
             throw XCTSkip("Daemon unavailable: \(app.staticTexts["device-list-error"].label)")
         }
-        let firstOpen = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'device-open-'")).firstMatch
-        if !firstOpen.waitForExistence(timeout: 15) {
+        let firstRow = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH 'device-row-'")).firstMatch
+        if !firstRow.waitForExistence(timeout: 15) {
             XCTAssertTrue(app.otherElements["device-list-empty"].exists)
             return
         }
+        firstRow.click()
+        XCTAssertTrue(app.otherElements["device-inspector"].waitForExistence(timeout: 5))
         let search = app.textFields["device-search"]
         search.click()
         search.typeText("zzzz-no-such-device")
         XCTAssertTrue(app.otherElements["device-search-empty"].waitForExistence(timeout: 5))
+    }
+}
+
+final class NewDeviceUITests: XCTestCase {
+    func testCreateSimulatorValidationAndResult() throws {
+        continueAfterFailure = false
+        let app = TestEnvironment.launchApp()
+        addTeardownBlock { app.terminate() }
+        app.buttons["new-device-button"].click()
+        XCTAssertTrue(app.sheets["new-device-sheet"].waitForExistence(timeout: 5))
+        let name = app.textFields["new-device-name"]
+        name.click()
+        name.typeKey("a", modifierFlags: .command)
+        name.typeText("iPhone Air")
+        XCTAssertTrue(app.staticTexts["new-device-name-error"].exists)
+        XCTAssertFalse(app.buttons["new-device-create"].isEnabled)
+        name.typeKey("a", modifierFlags: .command)
+        name.typeText("iPhone Air 2")
+        XCTAssertTrue(app.buttons["new-device-create"].isEnabled)
+        app.buttons["new-device-create"].click()
+        XCTAssertTrue(app.staticTexts["iPhone Air 2"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.otherElements["device-inspector"].staticTexts["iPhone Air 2"].exists)
     }
 }
 ```
@@ -837,12 +859,12 @@ final class DeviceSidebarUITests: XCTestCase {
 - [ ] **Step 2: Chạy để thấy fail**
 
 ```bash
-xcodebuild test -project App/OpenSim.xcodeproj -scheme OpenSim -destination 'platform=macOS' -parallel-testing-enabled NO -only-testing:OpenSimAppUITests/DeviceSidebarUITests
+xcodebuild test -project App/OpenSim.xcodeproj -scheme OpenSim -destination 'platform=macOS' -parallel-testing-enabled NO -only-testing:OpenSimAppUITests/DevicesUITests -only-testing:OpenSimAppUITests/NewDeviceUITests
 ```
 
-Expected: FAIL vì `device-sidebar` chưa tồn tại.
+Expected: FAIL vì `devices-table`/`new-device-button` chưa tồn tại.
 
-- [ ] **Step 3: Viết lifecycle, catalog và sidebar**
+- [ ] **Step 3: Viết lifecycle, catalog, table, inspector và New Simulator**
 
 `DeviceLifecycleAction`: enum `String, Sendable, CaseIterable` với `boot = "device_boot"`, `shutdown = "device_shutdown"`, `title`.
 
@@ -891,11 +913,7 @@ public final class DeviceLifecycleService {
 }
 ```
 
-`DeviceWindowManager`: `@MainActor @Observable`, giữ `OpenWindowAction`, dictionary `[DeviceID: NSWindow]`, `openDevices: Set<DeviceID>`. `show(_:)` focus cửa sổ hiện có cùng device, nếu không gọi `openAction?(id: "device", value: device)`. `register(window:device:)` set `window.identifier = "device-<udid>"`; `unregister(device:)` xoá entry.
-
-`DeviceGrouping`: nhóm theo `platform|runtime`, lọc search trên name, udid, deviceType, runtime name; trong nhóm sort booted trước rồi `localizedStandardCompare`; ngoài nhóm sort theo title. `DeviceGroup` có `id`, `title`, `devices`.
-
-`DeviceSidebarModel`: `searchText`, `platformFilter`, `groups(devices:runtimes:)`.
+`DeviceWindowManager`: `@MainActor @Observable`, giữ `OpenWindowAction`, dictionary `[DeviceID: NSWindow]`, `openDevices: Set<DeviceID>`. `show(_:)` focus cửa sổ hiện có cùng device, nếu không gọi `openAction?(id: "device", value: device)`. `register(window:device:)` set `window.identifier = NSUserInterfaceItemIdentifier("device-<udid>")`; `unregister(device:)` xoá entry.
 
 `DevicePreviewStore`:
 
@@ -925,33 +943,42 @@ public final class DevicePreviewStore {
 }
 ```
 
-`DeviceCatalogModel`: `@MainActor @Observable`, state `idle/loading/loaded/failed`, `devices`, `runtimes`, `leases`, `pending`, `conflict`, `lastError`, `sidebar`, `previews`, `connection`, `lifecycle`, `didLoad`.
+`DeviceCatalogModel`: `@MainActor @Observable`, state `idle/loading/loaded/failed`, `devices`, `runtimes`, `leases`, `pending`, `conflict`, `lastError`, `searchText`, `selectedDeviceID`, `previews`, `connection`, `lifecycle`, `didLoad`.
 
 - `refresh()`: guard client; `async let` devices/runtimes/leases; lưu lease control; state loaded; `didLoad = true`. Lỗi map `OpenSimError`, không xoá danh sách cũ.
+- `filteredDevices`: lọc `devices` theo `searchText` trên name, udid, deviceType, runtime name.
 - `perform(_:on:)`: chặn trùng qua `pending`; lưu `pendingAction`; gọi lifecycle với lease nil; refresh; `lease_conflict` set `conflict`, lỗi khác set `lastError`.
 - `takeControl(_:)`: gọi lifecycle với `pendingAction` đã lưu (mặc định `.boot` nếu nil) và takeover true, clear conflict, refresh.
 - `apply(_:)`: `device.state.changed` cập nhật state tại chỗ; `lease.changed` upsert; `lease.revoked` xoá theo lease ID.
 - `lease(for:)` trả control lease của device.
-- `groups` lấy từ sidebar.
 
-`DeviceSidebarView`: header Devices + refresh button identifier `device-refresh`; TextField `Search devices` identifier `device-search`; switch state:
-- loading: ProgressView.
-- failed: `ErrorStateView` identifier `device-list-error` có retry `device-list-error-retry`.
-- loaded, devices rỗng: `EmptyStateView` identifier `device-list-empty`.
-- loaded, groups rỗng: `EmptyStateView` identifier `device-search-empty`.
-- còn lại: `List` các section, row `DeviceRowView`; identifier `device-list`.
-- cuối: `RuntimeSectionView` identifier `runtime-list`.
-Container identifier `device-sidebar`.
+`DevicesView`: `Table(catalog.filteredDevices, selection: $catalog.selectedDeviceID)` cột Device/State/Agent; header `New Device` identifier `new-device-button`; `.searchable` identifier `device-search`; row identifier `device-row-<udid>` gắn với tên device; double-click mở cửa sổ. `.inspector` hiển thị `DeviceInspectorView` cho selection. Container `devices-table`; loading `devices-loading`; error `device-list-error` + Retry; empty `device-list-empty`; search rỗng `device-search-empty`; refresh `device-refresh`. `.task` gọi `refreshIfNeeded` rồi `previews.refresh(devices:screen:)`.
 
-`DeviceRowView`: Button mở cửa sổ identifier `device-open-sidebar-<udid>`, label accessibility gồm name, state, lease owner; Button power identifier `device-power-sidebar-<udid>`, icon play/stop, disabled khi pending; context menu Boot/Shut Down. Container identifier `device-row-<udid>`. Không hiển thị màu là tín hiệu duy nhất: badge luôn có text state.
+`DeviceInspectorView`: preview từ `DevicePreviewStore`, name/state, runtime/screen/last boot/agent; primary action theo state identifier `device-primary-action`; Take control khi có agent; More menu cho lifecycle. Container `device-inspector`. Không card/badge lặp trên row.
 
-`RuntimeSectionView`: DisclosureGroup "Runtimes", name + version, read-only.
+`NewDeviceModel`: `@MainActor @Observable`, fields `name`, `deviceType`, `runtime: RuntimeID?`, `runtimes`, `validation`, `isCreating`; `loadRuntimes(using:)` lọc theo platform của device type; `validate` chặn tên rỗng/trùng, runtime thiếu/sai platform; `submit(using:)` gọi `device_create` với `runtime.id.rawValue`, trả `Device`.
 
-`DevicesOverviewView`: switch state; loading identifier `devices-loading`; error `devices-error`; empty `devices-empty`; grid identifier `devices-grid` với `DeviceCardView`. `.task` gọi `refreshIfNeeded` rồi `previews.refresh(devices:screen:)`. Toolbar refresh identifier `devices-refresh`.
+```swift
+@MainActor
+@Observable
+public final class NewDeviceModel {
+    public enum Validation: Equatable {
+        case valid
+        case missingName
+        case duplicateName
+        case runtimeMissing(String)
+        case wrongPlatform(String)
+    }
+    public var name: String = ""
+    public var deviceType: String = ""
+    public var runtime: RuntimeID?
+    public private(set) var validation: Validation = .missingName
+    public func loadRuntimes(using client: DaemonClient, deviceType: String) async
+    public func submit(using client: DaemonClient) async throws -> Device
+}
+```
 
-`DeviceCardView`: preview hoặc icon platform; name, state badge, runtime name, lease owner; Button Open identifier `device-open-<udid>`, Button power identifier `device-power-<udid>`. Container identifier `device-card-<udid>`. Đây là identifier canonical cho test mở cửa sổ; sidebar dùng hậu tố `-sidebar` để không trùng.
-
-`StatusBadge`: text state, màu theo state (green booted, orange transition, secondary shutdown, red unknown), luôn có text.
+`NewDeviceSheet`: `Form` native với TextField `new-device-name`, Picker device type `new-device-type`, Picker runtime `new-device-runtime`; lỗi `new-device-name-error`, note `new-device-runtime-note` (link Open Runtimes), Create `new-device-create`; sheet `new-device-sheet`. Khi mở, chọn runtime mới nhất **đã cài** cùng platform; nếu không có thì để trống và disable Create. `New Device` mở sheet; create xong đóng, refresh catalog, chọn row mới. Không auto-boot; device mới `Shutdown`.
 
 `EmptyStateView`: `ContentUnavailableView(title, systemImage, description)`, identifier truyền vào.
 
@@ -959,24 +986,111 @@ Container identifier `device-sidebar`.
 
 `Formatters`: ByteCountFormatter MB/GB, RelativeDateTimeFormatter.
 
-`AppEnvironment` thêm `windows`, `lifecycle`, `catalog`; khởi tạo theo thứ tự connection, windows, lifecycle, catalog; `connection.onEvent` publish bus và `catalog.apply(event)`. `start()` sau connect gọi `catalog.refreshIfNeeded()`.
-
-`AppShell` sidebar thêm `Divider`, `DeviceSidebarView(catalog:)`, detail `.devices` dùng `DevicesOverviewView`. Sheet conflict tối thiểu: owner, expiresAt, Cancel (`cancelAction`), Take Control gọi `catalog.takeControl`. Task 7 thay bằng `TakeControlSheet` đầy đủ.
+`AppEnvironment` thêm `windows`, `lifecycle`, `catalog`, `runtimes`, `activity` theo thứ tự connection, windows, lifecycle, catalog, runtimes, activity; `connection.onEvent` publish bus và `catalog.apply(event)`. `start()` sau connect gọi `catalog.refreshIfNeeded()`. `AppShell` detail `.devices` dùng `DevicesView(catalog:)`; sidebar chỉ là `List(selection:)` native. Sheet conflict tối thiểu: owner, expiresAt, Cancel (`cancelAction`), Take Control gọi `catalog.takeControl`. Task 7 thay bằng `TakeControlSheet` đầy đủ.
 
 - [ ] **Step 4: Chạy để thấy pass**
 
 ```bash
 xcodebuild -project App/OpenSim.xcodeproj -scheme OpenSim -configuration Debug -destination 'platform=macOS' build
-xcodebuild test -project App/OpenSim.xcodeproj -scheme OpenSim -destination 'platform=macOS' -parallel-testing-enabled NO -only-testing:OpenSimAppUITests/DeviceSidebarUITests
+xcodebuild test -project App/OpenSim.xcodeproj -scheme OpenSim -destination 'platform=macOS' -parallel-testing-enabled NO -only-testing:OpenSimAppUITests/DevicesUITests -only-testing:OpenSimAppUITests/NewDeviceUITests
 ```
 
-Expected: `BUILD SUCCEEDED`; test pass 1 hoặc skip có lý do nếu daemon không có device.
+Expected: `BUILD SUCCEEDED`; table/inspector và New Simulator pass, hoặc skip có lý do nếu daemon không có device.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add App/Sources/OpenSimApp Tests/OpenSimAppUITests/DeviceSidebarUITests.swift
-git commit -m "feat(app): add device catalog sidebar and lifecycle actions"
+git add App/Sources/OpenSimApp Tests/OpenSimAppUITests/DevicesUITests.swift
+git commit -m "feat(app): add device table inspector and new simulator flow"
+```
+---
+
+### Task 3A: Runtimes theo version và Add Runtime
+
+**Files:**
+- Create: `App/Sources/OpenSimApp/Runtimes/RuntimesView.swift`, `RuntimeModel.swift`, `AddRuntimeSheet.swift`
+- Modify: `App/Sources/OpenSimApp/App/AppEnvironment.swift`, `App/Sources/OpenSimApp/App/AppShell.swift`, `App/Sources/OpenSimApp/App/DaemonClient.swift`
+- Test: `Tests/OpenSimAppUITests/RuntimesUITests.swift`
+
+**Interfaces:**
+- Consumes: operation `runtime_list`, `runtime_download`, `runtime_install`, `runtime_delete`; `Runtime`, `RuntimeID`, `RuntimeSource`, `OpenSimError`; `DeviceCatalogModel`.
+- Produces: `RuntimeModel`; `RuntimesView`; `AddRuntimeSheet`; `RuntimeModel.load(using:)`, `.install(_:)`, `.cancelInstall()`, `.remove(_:)`.
+
+- [ ] **Step 1: Viết UI test thất bại**
+
+```swift
+import XCTest
+
+final class RuntimesUITests: XCTestCase {
+    func testVersionRowsAndAddRuntime() throws {
+        continueAfterFailure = false
+        let app = TestEnvironment.launchApp()
+        addTeardownBlock { app.terminate() }
+        app.cells["sidebar-runtimes"].click()
+        XCTAssertTrue(app.otherElements["runtimes-list"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["add-runtime-button"].exists)
+        XCTAssertTrue(app.staticTexts["runtime-row-iOS 26.4"].exists)
+        XCTAssertTrue(app.staticTexts["runtime-row-watchOS 27.0"].exists)
+        app.buttons["add-runtime-button"].click()
+        XCTAssertTrue(app.sheets["add-runtime-sheet"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["add-runtime-source-download"].exists)
+        XCTAssertTrue(app.buttons["add-runtime-source-file"].exists)
+    }
+}
+```
+
+- [ ] **Step 2: Chạy để thấy fail**
+
+```bash
+xcodebuild test -project App/OpenSim.xcodeproj -scheme OpenSim -destination 'platform=macOS' -parallel-testing-enabled NO -only-testing:OpenSimAppUITests/RuntimesUITests
+```
+
+Expected: FAIL vì `runtimes-list` chưa tồn tại.
+
+- [ ] **Step 3: Viết model và view**
+
+`RuntimeModel` là `@MainActor @Observable`; `load()` lấy `runtime_list` (installed + catalog known), giữ mọi version, không gộp platform. `install(_:)` gọi `runtime_download` cho version catalog hoặc `runtime_install` với path `.dmg`; `cancelInstall()` cancel Task; `remove(_:)` gọi `runtime_delete` sau xác nhận và chỉ khi `deviceCount == 0`. Sau install/remove gọi `catalog.refresh()` và refresh NewDeviceModel runtime list.
+
+```swift
+@MainActor
+@Observable
+public final class RuntimeModel {
+    public enum State: Equatable {
+        case idle
+        case loading
+        case ready
+        case installing(RuntimeID)
+        case failed(String)
+    }
+    public private(set) var runtimes: [Runtime] = []
+    public private(set) var state: State = .idle
+    public func load(using client: DaemonClient) async
+    public func install(_ runtime: Runtime) async
+    public func cancelInstall()
+    public func remove(_ runtime: Runtime) async throws
+}
+```
+
+`RuntimesView`: `List` row theo platform + version; mỗi row name/version, installed/not, size, `deviceCount ?? 0`, source; actions Install/Cancel/Reveal/Remove; header `Add Runtime` identifier `add-runtime-button`. Container `runtimes-list`, row `runtime-row-<name>`, install `runtime-install-button`, cancel `runtime-cancel-button`, remove `runtime-remove-button`, progress `runtime-progress`, error `runtime-error`.
+
+`AddRuntimeSheet`: segmented Download/From File; Download chọn platform/version từ catalog best-effort, version đã cài disable; From File dùng `.fileImporter` cho `.dmg`; nút Install gọi `runtime_download`/`runtime_install`. Identifier `add-runtime-sheet`, `add-runtime-source-download`, `add-runtime-source-file`, `add-runtime-version`, `add-runtime-confirm`.
+
+Remove chặn khi `deviceCount > 0`: sheet giải thích và đưa `Show Devices`; không xoá ngầm.
+
+- [ ] **Step 4: Chạy để thấy pass**
+
+```bash
+xcodebuild -project App/OpenSim.xcodeproj -scheme OpenSim -configuration Debug -destination 'platform=macOS' build
+xcodebuild test -project App/OpenSim.xcodeproj -scheme OpenSim -destination 'platform=macOS' -parallel-testing-enabled NO -only-testing:OpenSimAppUITests/RuntimesUITests
+```
+
+Expected: `BUILD SUCCEEDED`; row version hiện, Add Runtime mở, Download/From File tồn tại.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add App/Sources/OpenSimApp/Runtimes App/Sources/OpenSimApp/App/AppEnvironment.swift App/Sources/OpenSimApp/App/AppShell.swift Tests/OpenSimAppUITests/RuntimesUITests.swift
+git commit -m "feat(app): add runtimes version management and add runtime"
 ```
 ---
 
@@ -1003,11 +1117,11 @@ final class DeviceWindowUITests: XCTestCase {
         continueAfterFailure = false
         let app = TestEnvironment.launchApp()
         addTeardownBlock { app.terminate() }
-        let firstOpen = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'device-open-'")).firstMatch
-        guard firstOpen.waitForExistence(timeout: 25) else {
+        let firstRow = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH 'device-row-'")).firstMatch
+        guard firstRow.waitForExistence(timeout: 25) else {
             throw XCTSkip("No device available for window test")
         }
-        firstOpen.click()
+        firstRow.doubleClick()
         XCTAssertTrue(app.otherElements["device-window"].waitForExistence(timeout: 20))
         let screenReady = app.otherElements["simulator-screen"].waitForExistence(timeout: 15)
         let bootPrompt = app.buttons["device-boot-button"].exists
@@ -1057,7 +1171,7 @@ public enum GestureMode: String, CaseIterable, Identifiable, Sendable {
 
 `DeviceBootRequiredView.swift`: VStack icon `power`, text "`<name>` is `<state>`", text "Boot the device to open a live screen.", Button "Boot" identifier `device-boot-button` với `.keyboardShortcut(.defaultAction)`, container identifier `device-boot-required`.
 
-`App/Sources/OpenSimApp/Windows/DeviceWindowModel.swift`: `@MainActor @Observable`, property `deviceID`, `device`, `loadError`, `screenError`, `screenSize`, `rotation`, `zoom`, `gestureMode`, `keyboardCapture`, `environment`, `eventToken`, `weak screenView`. Hành vi bắt buộc:
+`App/Sources/OpenSimApp/Windows/DeviceWindowModel.swift`: `@MainActor @Observable`, property `deviceID`, `device`, `loadError`, `screenError`, `screenSize`, `rotation`, `zoom`, `gestureMode`, `keyboardCapture`, `environment`, `lease`, `eventToken`, `weak screenView`. Computed `displayBridge` lấy từ `environment.bridge.display`; method `reconnect()` release lease cũ, load device và acquire lại. Mọi input phải qua `hasHeldControlLease`; không có đường tắt gọi Bridge input. Hành vi bắt buộc:
 
 - `activate()`: subscribe `environment.events` và forward event cho `apply(_:)`; lấy `client.device(deviceID)`; lỗi map `OpenSimError`.
 - `close()`: unsubscribe event, `screenView?.disconnect()`, clear reference.
@@ -1224,11 +1338,11 @@ Thêm vào `DeviceWindowUITests`:
         continueAfterFailure = false
         let app = TestEnvironment.launchApp()
         addTeardownBlock { app.terminate() }
-        let firstOpen = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'device-open-'")).firstMatch
-        guard firstOpen.waitForExistence(timeout: 25) else {
+        let firstRow = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH 'device-row-'")).firstMatch
+        guard firstRow.waitForExistence(timeout: 25) else {
             throw XCTSkip("No device available for input test")
         }
-        firstOpen.click()
+        firstRow.doubleClick()
         guard app.otherElements["simulator-screen"].waitForExistence(timeout: 20) else {
             throw XCTSkip("Device is not booted; boot a device and rerun")
         }
@@ -1290,9 +1404,30 @@ public enum KeyEvent: Sendable, Equatable {
 ```swift
     public private(set) var inputError: OpenSimError?
 
+    public var canSendInput: Bool { hasHeldControlLease }
+
+    private var hasHeldControlLease: Bool {
+        guard case .held(let held) = lease.state else { return false }
+        return held.mode == .control && held.deviceID == deviceID && held.expiresAt > Date()
+    }
+
+    private func requireControlLease() -> Bool {
+        guard hasHeldControlLease else {
+            inputError = OpenSimError(
+                code: ErrorCode.leaseRequired.rawValue,
+                message: "Control lease is required before sending input",
+                details: ["device": deviceID.rawValue],
+                recovery: "Acquire control or take control from the agent",
+                retryable: true
+            )
+            return false
+        }
+        return true
+    }
+
     public func handle(_ gesture: SimulatorGesture) {
-        guard let input = environment.bridge.input else {
-            inputError = .capabilityUnavailable("hid")
+        guard requireControlLease(), let input = environment.bridge.input else {
+            if environment.bridge.input == nil { inputError = .capabilityUnavailable("hid") }
             return
         }
         Task {
@@ -1308,7 +1443,8 @@ public enum KeyEvent: Sendable, Equatable {
     }
 
     public func handleKey(_ event: NSEvent) -> Bool {
-        guard keyboardCapture, let input = environment.bridge.input else { return false }
+        guard keyboardCapture else { return false }
+        guard requireControlLease(), let input = environment.bridge.input else { return true }
         guard let mapped = KeyboardController().handle(event: event, capture: true) else { return false }
         switch mapped {
         case .paste(let text):
@@ -1323,8 +1459,8 @@ public enum KeyEvent: Sendable, Equatable {
     }
 
     public func sendButton(_ button: HardwareButton) {
-        guard let input = environment.bridge.input else {
-            inputError = .capabilityUnavailable("hid")
+        guard requireControlLease(), let input = environment.bridge.input else {
+            if environment.bridge.input == nil { inputError = .capabilityUnavailable("hid") }
             return
         }
         Task {
@@ -1340,7 +1476,7 @@ public enum KeyEvent: Sendable, Equatable {
     }
 ```
 
-`SimulatorScreenContainerView` thêm overlay:
+`SimulatorScreenContainerView` thêm overlay; `overlay.isUserInteractionEnabled = model.canSendInput` và cập nhật khi `lease.state` đổi. `canSendInput` chỉ true khi `held` lease còn hạn; callbacks vẫn kiểm tra lại trong model, nên lease conflict/revoked không thể lọt input.
 
 ```swift
     private let overlay = InputOverlayView()
@@ -1448,11 +1584,11 @@ Thêm method:
         continueAfterFailure = false
         let app = TestEnvironment.launchApp()
         addTeardownBlock { app.terminate() }
-        let firstOpen = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'device-open-'")).firstMatch
-        guard firstOpen.waitForExistence(timeout: 25) else {
+        let firstRow = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH 'device-row-'")).firstMatch
+        guard firstRow.waitForExistence(timeout: 25) else {
             throw XCTSkip("No device available for toolbar test")
         }
-        firstOpen.click()
+        firstRow.doubleClick()
         guard app.otherElements["simulator-screen"].waitForExistence(timeout: 20) else {
             throw XCTSkip("Device is not booted; boot a device and rerun")
         }
@@ -1631,11 +1767,11 @@ final class LeaseTakeoverUITests: XCTestCase {
 
         let app = TestEnvironment.launchApp()
         addTeardownBlock { app.terminate() }
-        let open = app.buttons["device-open-\(device.id)"]
-        guard open.waitForExistence(timeout: 25) else {
-            throw XCTSkip("Device row not available for \(device.id)")
+        let row = app.staticTexts[device.name]
+        guard row.waitForExistence(timeout: 25) else {
+            throw XCTSkip("Device row not available for \(device.name)")
         }
-        open.click()
+        row.doubleClick()
 
         let banner = app.otherElements["lease-banner"]
         XCTAssertTrue(banner.waitForExistence(timeout: 20))
@@ -1645,8 +1781,24 @@ final class LeaseTakeoverUITests: XCTestCase {
         app.buttons["takeover-confirm"].click()
         XCTAssertTrue(banner.waitForNonExistence(timeout: 20))
     }
+
+    func testInputIsBlockedWhenHarnessHoldsLease() async throws {
+        let harness = DaemonTestHarness()
+        let device = try await harness.firstDevice()
+        _ = try await harness.acquireControl(device: device.id, owner: "ui-test-agent")
+        let app = TestEnvironment.launchApp()
+        addTeardownBlock { app.terminate() }
+        let row = app.staticTexts[device.name]
+        XCTAssertTrue(row.waitForExistence(timeout: 25))
+        row.doubleClick()
+        XCTAssertTrue(app.otherElements["simulator-screen"].waitForExistence(timeout: 20))
+        app.otherElements["simulator-screen"].click()
+        XCTAssertTrue(app.staticTexts["input-error-banner"].label.contains("Control lease is required"))
+    }
 }
 ```
+
+Test này bắt buộc: `DeviceWindowModel` phải chặn gesture/key/button khi chưa giữ lease; không chỉ ẩn banner. `input-lease-required` lấy từ `inputError` trong inspector/toolbar. Kiểm tra thêm audit JSONL không có operation input nào sau cú click.
 
 - [ ] **Step 2: Chạy để thấy fail**
 
@@ -1690,7 +1842,6 @@ public final class LeaseCoordinator {
 
     public func acquire(takeover: Bool = false) async {
         if case .held = state { return }
-        if case .takingOver = state { return }
         guard let client = connection.client else {
             state = .failed(.daemonUnavailable("Daemon is not connected"))
             return
@@ -1776,7 +1927,7 @@ Container identifier `lease-banner`, accessibility children contain, nền cam n
 
 `TakeControlSheet.swift`: View nhận `LeaseConflict`, closure confirm/cancel. Nội dung: title "Take control of this device?", giải thích owner đang dùng, lease bị thu hồi sau grace period, client kia nhận `lease_revoked` ở lần ghi tiếp theo, hiển thị `expiresAt` nếu có. HStack Button Cancel identifier `takeover-cancel` với `.keyboardShortcut(.cancelAction)` và `@FocusState` được set true trong `onAppear`; Button "Take Control" role destructive identifier `takeover-confirm`. Container identifier `takeover-sheet`, width 460.
 
-`DeviceWindowModel` thêm `public let lease: LeaseCoordinator`, khởi tạo trong init. `activate()` gọi `await lease.acquire()` sau khi load device; subscribe event chuyển cho `lease.handle(event)`. `close()` gọi `await lease.release()` qua Task trước khi unsubscribe. `boot()` truyền `using: lease.heldLease` với computed:
+`DeviceWindowModel` thêm `public let lease: LeaseCoordinator`, khởi tạo trong init. `activate()` chỉ load device và subscribe event chuyển cho `lease.handle(event)`; **không** acquire khi cửa sổ mới mở. `WindowAccessor`/`DeviceWindowRoot` acquire khi window becomeKey và release khi resignKey (trừ lúc takeover), đúng spec 9.2. `close()` release lease trước khi unsubscribe. `boot()` truyền `using: lease.heldLease` với computed:
 
 ```swift
 extension LeaseCoordinator {
@@ -1824,6 +1975,8 @@ VStack(spacing: 0) {
 
 `showTakeover` là `public var` trong model. Sheet dùng `.sheet` trên device window; identifier vẫn thấy trong XCUITest.
 
+`DeviceWindowRoot` giữ `NSWindow` từ `WindowAccessor` và dùng `.onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification))`/`didResignKeyNotification`, lọc đúng window: becomeKey gọi `model.lease.acquire()`, resignKey gọi `model.lease.release()` trừ khi takeover sheet đang mở. Không acquire lease khi cửa sổ chỉ mở nhưng không key.
+
 - [ ] **Step 4: Chạy để thấy pass**
 
 ```bash
@@ -1862,8 +2015,8 @@ final class QuickSwitchUITests: XCTestCase {
         continueAfterFailure = false
         let app = TestEnvironment.launchApp()
         addTeardownBlock { app.terminate() }
-        let firstOpen = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'device-open-'")).firstMatch
-        guard firstOpen.waitForExistence(timeout: 25) else {
+        let firstRow = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH 'device-row-'")).firstMatch
+        guard firstRow.waitForExistence(timeout: 25) else {
             throw XCTSkip("No device available for quick switch")
         }
         app.typeKey("k", modifierFlags: .command)
@@ -1994,10 +2147,10 @@ git commit -m "feat(app): add quick switch palette and menu bar extra"
 ```
 ---
 
-### Task 9: Agent activity feed và audit
+### Task 9: Agent activity table và audit
 
 **Files:**
-- Create: `App/Sources/OpenSimApp/Activity/ActivityEntry.swift`, `AgentActivityModel.swift`, `AgentActivityView.swift`, `ActivityRowView.swift`, `ActivityDetailView.swift`
+- Create: `App/Sources/OpenSimApp/Activity/ActivityEntry.swift`, `AgentActivityModel.swift`, `AgentActivityView.swift`, `ActivityTable.swift`, `ActivityInspector.swift`
 - Modify: `App/Sources/OpenSimApp/App/AppEnvironment.swift`, `App/Sources/OpenSimApp/App/AppShell.swift`
 - Test: `Tests/OpenSimAppUITests/ActivityUITests.swift`
 
@@ -2017,8 +2170,8 @@ final class ActivityUITests: XCTestCase {
         continueAfterFailure = false
         let app = TestEnvironment.launchApp()
         addTeardownBlock { app.terminate() }
-        app.buttons["sidebar-activity"].click()
-        XCTAssertTrue(app.otherElements["activity-feed"].waitForExistence(timeout: 10))
+        app.cells["sidebar-activity"].click()
+        XCTAssertTrue(app.otherElements["activity-table"].waitForExistence(timeout: 10))
         let row = app.otherElements.matching(NSPredicate(format: "identifier BEGINSWITH 'activity-row-'")).firstMatch
         XCTAssertTrue(row.exists || app.otherElements["activity-empty"].exists)
         XCTAssertTrue(app.buttons["activity-pause"].exists)
@@ -2032,7 +2185,7 @@ final class ActivityUITests: XCTestCase {
 xcodebuild test -project App/OpenSim.xcodeproj -scheme OpenSim -destination 'platform=macOS' -parallel-testing-enabled NO -only-testing:OpenSimAppUITests/ActivityUITests
 ```
 
-Expected: FAIL vì `activity-feed` chưa tồn tại.
+Expected: FAIL vì `activity-table` chưa tồn tại.
 
 - [ ] **Step 3: Viết activity model và view**
 
@@ -2046,7 +2199,7 @@ Expected: FAIL vì `activity-feed` chưa tồn tại.
 - `append`: giữ ring 500 entry.
 - Thumbnail: chỉ với entry operation có action bắt đầu `ui.`, gọi `screenProvider()?.screenshot` scale 0.2 JPEG, gán `NSImage`; lỗi bỏ qua, không chặn feed; chỉ chạy khi Settings bật `activityThumbnails`.
 
-`AgentActivityView`: `HSplitView` gồm danh sách trái và detail phải. Header có Picker filter All/Leases/Lifecycle/Operations, Toggle Pause identifier `activity-pause`, text paused count, Button "Open Audit Log" dùng `NSWorkspace.activateFileViewerSelecting([paths.auditFile])`. List identifier `activity-feed`; empty `activity-empty`; row identifier `activity-row-<index>`; row hiển thị thời gian, actor, action, target, result, duration, thumbnail nếu có. Detail identifier `activity-detail` hiển thị JSON payload, lease/session, nút "Open Device" identifier `activity-open-device`; không tự takeover, mở cửa sổ để banner/takeover xử lý.
+`AgentActivityView`: `Table` cột Time/Session/Action/Target/Result, selection theo entry; phần inspector bên phải hiển thị event, payload JSON, owner/lease/device, nút `Open Device` identifier `activity-open-device`; không tự takeover. Header có Picker filter All/Leases/Lifecycle/Operations, Button Pause identifier `activity-pause` + paused count, Button "Open Audit Log" dùng `NSWorkspace.activateFileViewerSelecting([paths.auditFile])`. Table identifier `activity-table`; row identifier `activity-row-<id>`; empty `activity-empty`; inspector `activity-inspector`. Không feed card, tag hay thumbnail tự chế.
 
 `AppEnvironment` thêm `activity` và subscribe bus; `AppShell` case `.activity` dùng `AgentActivityView(model: environment.activity)`.
 
@@ -2057,7 +2210,7 @@ xcodebuild -project App/OpenSim.xcodeproj -scheme OpenSim -configuration Debug -
 xcodebuild test -project App/OpenSim.xcodeproj -scheme OpenSim -destination 'platform=macOS' -parallel-testing-enabled NO -only-testing:OpenSimAppUITests/ActivityUITests
 ```
 
-Expected: `BUILD SUCCEEDED`; feed hiện hoặc empty state, Pause tồn tại.
+Expected: `BUILD SUCCEEDED`; table hiện hoặc empty state, Pause tồn tại.
 
 - [ ] **Step 5: Commit**
 
@@ -2112,13 +2265,13 @@ Expected: FAIL vì `settings-window` chưa tồn tại.
 
 - [ ] **Step 3: Viết settings và doctor**
 
-`SettingsView`: custom tab bar gồm bốn Button identifier `settings-tab-general`, `settings-tab-daemon`, `settings-tab-input`, `settings-tab-capabilities`; nội dung bên dưới; container `settings-window`, frame 620x460. Dùng Button thay `TabView` để identifier ổn định cho XCUITest, vẫn giữ keyboard focus và VoiceOver label.
+`SettingsView`: `TabView` native với bốn tab General/Daemon/Input/Capabilities, nội dung dùng `Form`/`GroupBox`; root `.accessibilityIdentifier("settings-window")`; tab identifier `settings-tab-general`, `settings-tab-daemon`, `settings-tab-input`, `settings-tab-capabilities`. Không custom tab bar, không frame cứng. Cửa sổ mở bằng gear trên titlebar hoặc `⌘,` qua `Settings` scene.
 
 `GeneralSettingsView`: Toggle "Connect automatically" identifier `settings-auto-connect`; TextField "Client name" identifier `settings-client-name`; dòng trạng thái daemon read-only; Button "Reconnect" identifier `settings-reconnect`.
 
 `DaemonSettingsView`: hiển thị version, protocol, pid, port, xcodeVersion, startedAt từ `HealthResponse`; CLI path phát hiện bởi `OpenSimCLILocator` và override trong `AppSettings`; Button "Choose" mở `NSOpenPanel` chọn executable và lưu override identifier `settings-daemon-choose-cli`; Button "Restart Daemon" identifier `settings-daemon-restart` gọi `connection.restartDaemon()`, hiển thị ProgressView và lỗi `settings-daemon-error`; Button "Reveal Daemon Log" dùng `NSWorkspace.activateFileViewerSelecting([paths.daemonLogFile])`, nếu file chưa có thì mở thư mục log.
 
-`InputSettingsView`: Toggle "Capture Mac keyboard by default" identifier `settings-keyboard-default`; Toggle "Paste text with Command-V" identifier `settings-paste-command-v`; Picker gesture mode mặc định identifier `settings-default-gesture`; Toggle "Activity thumbnails" identifier `settings-activity-thumbnails`; dòng capability `hid` từ health, nếu unavailable hiện text giải thích.
+`InputSettingsView`: Toggle "Capture Mac keyboard by default" identifier `settings-keyboard-default`; Toggle "Paste text with Command-V" identifier `settings-paste-command-v`; Picker `GestureMode.allCases` (`Direct`/`Pinch`/`Rotate`) identifier `settings-default-gesture`; Toggle "Activity thumbnails" identifier `settings-activity-thumbnails`; dòng capability `hid` từ health, nếu unavailable hiện text giải thích.
 
 `DoctorModel.swift`:
 
@@ -2180,16 +2333,16 @@ git commit -m "feat(app): add settings capabilities and doctor"
 ```
 ---
 
-### Task 11: Storage và Performance shell với state thật
+### Task 11: Storage shell và Performance flag
 
 **Files:**
-- Create: `App/Sources/OpenSimApp/Shared/ServiceShellModel.swift`, `Storage/StorageShellView.swift`, `Performance/PerformanceShellView.swift`
+- Create: `App/Sources/OpenSimApp/Shared/ServiceShellModel.swift`, `Storage/StorageShellView.swift`
 - Modify: `App/Sources/OpenSimApp/App/AppShell.swift`
 - Test: `Tests/OpenSimAppUITests/ServiceShellUITests.swift`
 
 **Interfaces:**
 - Consumes: `DaemonClient.probe(path:)`, `OpenSimError`, `AppTab`.
-- Produces: `ServiceProbeResult`; `ServiceKind`; `ServiceShellModel`; `StorageShellView`; `PerformanceShellView`.
+- Produces: `ServiceProbeResult`; `ServiceKind`; `ServiceShellModel`; `StorageShellView`.
 
 - [ ] **Step 1: Viết UI test thất bại**
 
@@ -2202,15 +2355,12 @@ final class ServiceShellUITests: XCTestCase {
         let app = TestEnvironment.launchApp()
         addTeardownBlock { app.terminate() }
 
-        app.buttons["sidebar-storage"].click()
+        XCTAssertTrue(app.cells["sidebar-storage"].waitForExistence(timeout: 20))
+        XCTAssertFalse(app.cells["sidebar-performance"].exists)
+        app.cells["sidebar-storage"].click()
         XCTAssertTrue(app.otherElements["storage-shell"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["storage-state"].waitForExistence(timeout: 20))
         XCTAssertTrue(app.buttons["storage-retry"].exists)
-
-        app.buttons["sidebar-performance"].click()
-        XCTAssertTrue(app.otherElements["performance-shell"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["performance-state"].waitForExistence(timeout: 20))
-        XCTAssertTrue(app.buttons["performance-retry"].exists)
     }
 }
 ```
@@ -2349,9 +2499,7 @@ struct StorageShellView: View {
 }
 ```
 
-`PerformanceShellView` dùng cùng cấu trúc với `service: .performance`, identifier `performance-shell`, `performance-state`, `performance-retry`, `performance-unavailable`, `performance-empty`; message nói metrics service và Plan 5.
-
-`AppShell` case `.storage` dùng `StorageShellView(clientProvider: { environment.connection.client })`; case `.performance` dùng `PerformanceShellView(clientProvider: { environment.connection.client })`. Plan 5 thay hai case này bằng view thật, không đổi tab/identifier.
+`AppShell` case `.storage` dùng `StorageShellView(clientProvider: { environment.connection.client })`. Performance không có case view trong Plan 4: `AppFeature.performance=false`, sidebar và detail không tồn tại; Plan 5 thay bằng `PerformanceTabView` và bật flag.
 
 - [ ] **Step 4: Chạy để thấy pass**
 
@@ -2360,7 +2508,7 @@ xcodebuild -project App/OpenSim.xcodeproj -scheme OpenSim -configuration Debug -
 xcodebuild test -project App/OpenSim.xcodeproj -scheme OpenSim -destination 'platform=macOS' -parallel-testing-enabled NO -only-testing:OpenSimAppUITests/ServiceShellUITests
 ```
 
-Expected: `BUILD SUCCEEDED`; cả hai tab hiện `unavailable` với message thật từ probe, không có số liệu giả.
+Expected: `BUILD SUCCEEDED`; Storage hiện `unavailable` với message thật từ probe; sidebar không có Performance khi flag tắt; không có số liệu giả.
 
 - [ ] **Step 5: Commit**
 
@@ -2373,7 +2521,7 @@ git commit -m "feat(app): add storage and performance service shells"
 ### Task 12: Accessibility, keyboard navigation và final UI suite
 
 **Files:**
-- Modify: toàn bộ view có control; `TakeControlSheet.swift`, `DeviceRowView.swift`, `SettingsView.swift`, `QuickSwitchPalette.swift`
+- Modify: toàn bộ view có control; `TakeControlSheet.swift`, `DevicesView.swift`, `DeviceInspectorView.swift`, `RuntimesView.swift`, `SettingsView.swift`, `QuickSwitchPalette.swift`
 - Test: `Tests/OpenSimAppUITests/AccessibilityUITests.swift`
 
 **Interfaces:**
@@ -2391,16 +2539,17 @@ final class AccessibilityUITests: XCTestCase {
         let app = TestEnvironment.launchApp()
         addTeardownBlock { app.terminate() }
 
-        for tab in ["sidebar-devices", "sidebar-storage", "sidebar-performance", "sidebar-activity"] {
-            let button = app.buttons[tab]
-            XCTAssertTrue(button.waitForExistence(timeout: 20))
-            XCTAssertFalse(button.label.isEmpty)
+        for tab in ["sidebar-devices", "sidebar-runtimes", "sidebar-storage", "sidebar-activity"] {
+            let row = app.cells[tab]
+            XCTAssertTrue(row.waitForExistence(timeout: 20))
+            XCTAssertFalse(row.label.isEmpty)
         }
-        let firstRow = app.otherElements.matching(NSPredicate(format: "identifier BEGINSWITH 'device-row-'")).firstMatch
+        XCTAssertFalse(app.cells["sidebar-performance"].exists)
+        let firstRow = app.cells.matching(NSPredicate(format: "identifier BEGINSWITH 'device-row-'")).firstMatch
         if firstRow.exists {
             XCTAssertFalse(firstRow.label.isEmpty)
         }
-        app.buttons["sidebar-storage"].click()
+        app.cells["sidebar-storage"].click()
         XCTAssertTrue(app.staticTexts["storage-state"].waitForExistence(timeout: 20))
     }
 }
@@ -2416,13 +2565,13 @@ Expected: FAIL vì một số control thiếu label/identifier.
 
 - [ ] **Step 3: Hoàn thiện accessibility và focus**
 
-- Sidebar Button có label "Devices", "Storage", "Performance", "Agent Activity"; trạng thái chọn dùng `.accessibilityAddTraits(.isSelected)`.
-- `DeviceRowView` container label gồm name, state, lease owner; badge luôn có text; power button có label "Boot <name>" hoặc "Shut down <name>".
+- Sidebar `List` row có label "Devices", "Runtimes", "Storage", "Agent Activity"; trạng thái chọn native; Performance không xuất hiện khi flag tắt.
+- `DevicesView`/`DeviceInspectorView` label gồm name, state, lease owner; state luôn có text; primary action đọc được state hiện tại.
 - Toolbar button có `help` và `accessibilityLabel`; keyboard toggle có label "Capture Mac keyboard", state on/off.
 - `TakeControlSheet` dùng `@FocusState` đặt Cancel làm focus đầu tiên, Cancel có `.keyboardShortcut(.cancelAction)`, Take Control có role destructive và label nêu hậu quả.
 - `QuickSwitchPalette` search field focus khi mở; row có label name + state + owner; arrow/return/escape hoạt động; `Esc` đóng panel.
 - Settings tab button có label; Capabilities table row có label `render: available` dạng text, không chỉ màu.
-- Storage/Performance state có text `storage-state`/`performance-state`; lỗi có code và recovery; màu chỉ là phụ.
+- Storage state có text `storage-state`; lỗi có code và recovery; màu chỉ là phụ.
 - Tất cả icon-only button có `accessibilityLabel`; không dùng màu làm tín hiệu duy nhất.
 - `DeviceWindowRoot` đặt `.accessibilityIdentifier("device-window")`; `SimulatorScreenContainerView` có label "Simulator screen for <device>" và value state.
 
@@ -2448,20 +2597,22 @@ Chạy app bằng `open App/OpenSim.xcodeproj`, scheme `OpenSim`, hoặc `xcodeb
 | Màn hình | Trạng thái cần xem | Tiêu chí đạt |
 |---|---|---|
 | Main window | Loading, loaded, empty, daemon disconnected | Sidebar không nhảy layout; status có text; Retry rõ; không màu-only |
-| Device sidebar | Nhiều platform/runtime, search, lease owner | Nhóm đúng runtime; search lọc ngay; booted đứng trước; badge đọc được |
-| Devices grid | Có preview và không preview | Ảnh đúng tỉ lệ, không méo; card không đổi chiều cao; action rõ |
+| Devices table | Nhiều platform/runtime, search, lease owner | Table native; search lọc ngay; row không có button/badge lặp; booted state đọc được |
+| Device inspector | Booted, Shutdown, Runtime missing | Preview đúng tỉ lệ; CTA đổi theo state; metadata đủ runtime/screen/last boot/agent |
+| New Simulator | Valid, tên trùng, runtime thiếu | Sheet native; Create disabled đúng; tạo xong chọn row Shutdown; count cập nhật |
+| Runtimes | Installed, not installed, installing, error | Row theo version; Install/Cancel/Remove rõ; Add Runtime Download/From File; device chờ runtime chuyển Shutdown |
 | Device window booted | Portrait, landscape, zoom 50/100/200 | Screen fit, không cắt; toolbar không tràn; rotate đổi hướng presentation |
 | Device window shutdown | Boot prompt | Nút Boot rõ; sau boot screen tự xuất hiện; lỗi render có banner |
 | Lease conflict | Banner, Take Control, sheet | Owner và hạn lease đúng; Cancel focus trước; takeover xong banner biến mất |
 | Input | Tap, long press, swipe, drag, pinch, rotate, scroll, type, Cmd+V | Fixture phản hồi đúng; không gửi input khi chưa giữ lease; lỗi có banner |
 | Quick switch | Cmd+K, search, arrow, Return, Esc | Panel nổi trên cửa sổ hiện tại; mở đúng device; không mở trùng cửa sổ |
 | Menu bar extra | Có device booted, agent lease | Danh sách đúng; Open/Shut Down hoạt động; status khớp main window |
-| Agent activity | Empty, có event, paused | Feed cập nhật realtime; pause giữ buffer; detail đọc được; audit mở được |
+| Agent activity | Empty, có event, paused | Table cập nhật realtime; pause giữ buffer; inspector/payload đọc được; audit mở được |
 | Settings general/daemon | Connected, disconnected, restart | Không lộ token; restart có progress; lỗi có recovery |
 | Settings input | Capability hid available/unavailable | Toggle phản ánh đúng; unavailable giải thích rõ |
 | Settings capabilities | Loading, loaded, error | Bảng đủ 7 capability; doctor error có Retry; JSON copy được |
 | Storage shell | Probing, unavailable, error, empty | Không có số liệu giả; message nêu Plan 5; Retry hoạt động |
-| Performance shell | Probing, unavailable, error, empty | Không có sparkline giả; message nêu Plan 5; Retry hoạt động |
+| Performance hidden | Flag tắt | Không có row Performance, không có shell/empty state; Plan 5 bật sau khi nối metrics |
 | VoiceOver | Sidebar, toolbar, lease sheet, palette | Đọc đúng label/state; focus không kẹt; Cancel đọc trước Take Control |
 
 Ghi kết quả từng mục vào PR description hoặc task log. Mục fail phải sửa trước khi đánh dấu Exit criteria.
@@ -2474,25 +2625,31 @@ Ghi kết quả từng mục vào PR description hoặc task log. Mục fail ph�
 | 5.4 | Private API chỉ trong Bridge; app gate capability, không crash | 2, 4, 5 |
 | 5.5 | Boot flow, agent tranh quyền, người dùng take control | 3, 7 |
 | 6 | Device, Lease, Session, AuditEvent hiển thị đúng domain | 2, 3, 7, 9 |
-| 9.1 | Sidebar, Devices, Storage, Performance, Agent Activity | 1, 3, 9, 11 |
+| 9.1 | Sidebar native; Devices table/inspector, Runtimes, Storage, Activity; Performance ẩn | 1, 3, 3A, 9, 11 |
 | 9.2 | Device window, toolbar, gesture, nhiều cửa sổ, Cmd+K, menu bar, đóng cửa sổ release lease | 4, 5, 6, 7, 8 |
-| 9.3 | Không mock, capability banner, destructive confirm, accessibility | 3, 5, 7, 10, 11, 12 |
+| 9.3 | Không mock, native components, capability banner, destructive confirm, accessibility | 1, 3, 3A, 9, 10, 11, 5, 7, 12 |
+| 9.4 | New Simulator: name/type/runtime, validation, tạo Shutdown | 3 |
+| 9.5 | Runtimes theo version, Add Runtime Download/From File, delete guard | 3A |
+| 9.6 | Settings scene native, 4 tab, Doctor loading/error/retry | 10 |
+| 9.7 | Performance flag false trong Plan 4 | 1, 11 |
 | 12 | App Sandbox tắt, Hardened Runtime, không lộ token, không shell string | 1, 2, 10 |
 | 13 | Error có code/recovery, OSLog subsystem, audit feed | 2, 9, 10 |
-| 14.3 | XCUITest launch/list/window/lease/quick switch/settings; checklist thủ công | 1, 3, 4, 7, 8, 10, 11, 12 |
-| 16 Plan 4 | App macOS, device windows, full gesture, quick switch, activity, shell tabs | tất cả |
-| 17.1 | Acceptance 9: mở app, thấy device, boot, live screen, gesture, switch, take control | 3, 4, 5, 7, 8 |
+| 14.3 | XCUITest launch/table/new device/runtimes/window/lease/settings; checklist thủ công | 1, 3, 3A, 9, 10, 11, 4, 7, 8, 12 |
+| 16 Plan 4 | App macOS, device windows, full gesture, quick switch, New Device, Runtimes, Settings, activity | tất cả |
+| 17.1 | Acceptance 9-12: mở app, lease gate, New Device, Runtimes, Settings | 1, 3, 3A, 9, 10, 4, 5, 7, 8 |
 | 18 | Private API đổi hoặc thiếu thì capability gate + fallback, không crash | 2, 4, 5 |
 ## Exit Criteria
 
-- `xcodegen generate --spec App/project.yml` tạo `App/OpenSim.xcodeproj`; `xcodebuild build` thành công với Swift 6 strict concurrency.
+- `xcodegen generate --spec App/project.yml --project App` tạo `App/OpenSim.xcodeproj`; `xcodebuild build` thành công với Swift 6 strict concurrency.
 - Toàn bộ `Tests/OpenSimAppUITests` pass hoặc skip có lý do rõ; không có test bị disable vĩnh viễn.
-- App mở main window, load device thật từ daemon, boot/shutdown qua daemon operation, mở nhiều cửa sổ device, render `SimulatorScreenView`, nhận input khi giữ lease control.
+- App mở main window, load device thật từ daemon, boot/shutdown qua daemon operation, mở nhiều cửa sổ device, render `SimulatorScreenView`, chỉ nhận input khi giữ lease control còn hạn; harness giữ lease thì input bị chặn với `lease_required`.
+- New Simulator tạo device `Shutdown`, validate tên trùng/runtime thiếu; Runtimes cài version cũ/import `.dmg`, cancel progress, delete bị chặn khi còn device; New Device picker cập nhật version đã cài.
 - Lease conflict hiện banner đúng owner; Take Control qua sheet xác nhận, hoàn tất sau grace period; đóng cửa sổ release lease; heartbeat 30 giây.
 - `Cmd+K` mở palette từ bất kỳ cửa sổ nào, mở/focus đúng device; menu bar extra boot/shutdown/switch được.
 - Agent activity đọc audit history và SSE, pause/resume đúng; không có thumbnail giả.
-- Settings có bốn tab, doctor chạy direct hoặc fallback; capability table có đủ render/hid/a11y/screenshot/video/watch/tv.
-- Storage/Performance hiển thị `unavailable` thật khi daemon thiếu endpoint, error có Retry, empty state chỉ khi probe available; không có mock data.
+- Settings là `Settings` scene native, mở bằng gear/`⌘,`, bốn tab; doctor chạy direct hoặc fallback; capability table đủ render/hid/a11y/screenshot/video/watch/tv.
+- Storage shell phản ánh service thật, error có Retry, không mock; Performance ẩn hoàn toàn khi `AppFeature.performance=false`, không có shell/tab chết.
+- UI chỉ dùng native components; không còn `StorageCategoryChart`, `DeviceCardView`, `StatusBadge`, custom Settings tab bar hay `.font(.system(size:))` trong app.
 - `grep -R "simctl\|SimDevice\|CoreSimulator" App/Sources/OpenSimApp` không có kết quả; app không có lifecycle path thứ hai.
 - `grep -R "Mock\|FakeDevice\|SampleDevice" App/Sources/OpenSimApp` không có kết quả; test support chỉ nằm dưới `Tests/OpenSimAppUITests`.
 - Không đổi tên hay signature `SimulatorScreenView`; chỉ có extension `isReadyForInput`.

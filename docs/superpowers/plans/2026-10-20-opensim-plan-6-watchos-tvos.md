@@ -664,6 +664,9 @@ final class PlatformRuntimeInventoryTests: XCTestCase {
     private struct FakeRuntimes: RuntimeControlling {
         var values: [Runtime]
         func listRuntimes() async throws -> [Runtime] { values }
+        func downloadRuntime(platform: Platform, version: String) async throws -> Runtime {
+            values.first { $0.platform == platform && $0.version == version } ?? values[0]
+        }
         func installRuntime(at path: String) async throws -> Runtime { values[0] }
         func deleteRuntime(_ id: RuntimeID) async throws {}
     }

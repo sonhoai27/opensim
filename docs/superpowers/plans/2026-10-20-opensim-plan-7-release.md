@@ -913,9 +913,8 @@ final class DestructiveOperationTests: XCTestCase {
         try harness.start()
         let deviceType = try firstIPhoneDeviceType()
         let created = try harness.run([
-            "device", "create",
-            "--name", "OpenSim Security Delete",
-            "--device-type", deviceType,
+            "device", "create", "OpenSim Security Delete",
+            "--type", deviceType,
             "--json"
         ])
         XCTAssertEqual(created.status, 0, created.stderr)
@@ -926,7 +925,7 @@ final class DestructiveOperationTests: XCTestCase {
 
     override func tearDownWithError() throws {
         if let udid {
-            _ = try? harness.run(["device", "delete", udid, "--yes", "--json"])
+            _ = try? harness.run(["device", "delete", "--device", udid, "--yes", "--json"])
         }
         harness.stop()
         harness = nil
@@ -1037,9 +1036,9 @@ Run:
 swift test --filter DestructiveOperationTests
 export OPENSIM_TEST_HOME="$(mktemp -d)"
 HOME="$OPENSIM_TEST_HOME" OPENSIM_NO_LAUNCHAGENT=1 .build/debug/opensim daemon start
-HOME="$OPENSIM_TEST_HOME" .build/debug/opensim device create --name "OpenSim Audit" --device-type "iPhone 17" --json > /tmp/audit-create.json
+HOME="$OPENSIM_TEST_HOME" .build/debug/opensim device create "OpenSim Audit" --type "iPhone 17" --json > /tmp/audit-create.json
 UDID="$(jq -r '.data.id' /tmp/audit-create.json)"
-HOME="$OPENSIM_TEST_HOME" .build/debug/opensim device delete "$UDID" --yes --json > /dev/null
+HOME="$OPENSIM_TEST_HOME" .build/debug/opensim device delete --device "$UDID" --yes --json > /dev/null
 HOME="$OPENSIM_TEST_HOME" Scripts/security/check-audit-coverage.sh
 HOME="$OPENSIM_TEST_HOME" .build/debug/opensim daemon stop
 ```
@@ -2994,15 +2993,12 @@ import OpenSimCore
 
 enum OpenSimCommandCatalog {
     static func make() -> OperationCatalog {
-        var catalog = OperationCatalog.plan3()
-        catalog.registerUIOperations()
-        catalog.registerStoragePerformanceOperations()
-        return catalog
+        OperationCatalog.plan5()
     }
 }
 ```
 
-`OperationCatalog.plan3()` đã bao gồm `plan1()`; `registerUIOperations()` do Plan 2 định nghĩa; `registerStoragePerformanceOperations()` do Plan 5 định nghĩa. Giữ đúng tên hàm mà Plan 2 đặt; không đăng ký lại operation ở Plan 7.
+`OperationCatalog.plan5()` là factory duy nhất: `plan3()` (bao gồm Plan 2 `ui_*`) cộng storage/perf của Plan 5. Không có `registerUIOperations()` và không đăng ký operation ở Plan 7.
 
 Đăng ký command:
 
@@ -3067,11 +3063,11 @@ swift build -c release
 ## Bắt đầu
 
 ```bash
-opensim device boot "iPhone Air" --wait
+opensim device boot --device "iPhone Air" --wait
 opensim app install ./Build/MyApp.app --device "iPhone Air"
 opensim app launch com.example.myapp --device "iPhone Air"
 opensim ui tree --device "iPhone Air" --json
-opensim ui tap --on 'id=login-button' --device "iPhone Air"
+opensim ui tap --on 'id=fixture-primary-button' --device "iPhone Air"
 opensim ui screenshot --device "iPhone Air" --out /tmp/screen.png
 ```
 
@@ -3697,22 +3693,22 @@ if [[ ! -d "$FIXTURE" ]]; then
 fi
 
 DEVICE_TYPE="$(xcrun simctl list devicetypes -j | jq -r '[.devicetypes[] | select(.name | startswith("iPhone"))][0].identifier')"
-UDID="$("$CLI" device create --name "OpenSim Release E2E" --device-type "$DEVICE_TYPE" --json | jq -r '.data.id')"
+UDID="$("$CLI" device create "OpenSim Release E2E" --type "$DEVICE_TYPE" --json | jq -r '.data.id')"
 cleanup() {
-  "$CLI" app terminate "$UDID" dev.opensim.fixture >/dev/null 2>&1 || true
-  "$CLI" device shutdown "$UDID" >/dev/null 2>&1 || true
-  "$CLI" device delete "$UDID" --yes >/dev/null 2>&1 || true
+  "$CLI" app terminate dev.opensim.fixture --device "$UDID" >/dev/null 2>&1 || true
+  "$CLI" device shutdown --device "$UDID" >/dev/null 2>&1 || true
+  "$CLI" device delete --device "$UDID" --yes >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
-"$CLI" device boot "$UDID" --wait --json | jq -e '.ok == true' >/dev/null
+"$CLI" device boot --device "$UDID" --wait --json | jq -e '.ok == true' >/dev/null
 "$CLI" app install "$FIXTURE" --device "$UDID" --json | jq -e '.ok == true' >/dev/null
 "$CLI" app launch dev.opensim.fixture --device "$UDID" --json | jq -e '.ok == true' >/dev/null
 
 TREE="$("$CLI" ui tree --device "$UDID" --json)"
-print -r -- "$TREE" | jq -e '[.. | objects | select(.identifier? == "login-button")] | length > 0' >/dev/null
+print -r -- "$TREE" | jq -e '[.. | objects | select(.identifier? == "fixture-primary-button")] | length > 0' >/dev/null
 "$CLI" ui screenshot --device "$UDID" --out "$OUT/before.png" >/dev/null
-"$CLI" ui tap --on 'id=login-button' --device "$UDID" --json | jq -e '.ok == true' >/dev/null
+"$CLI" ui tap --on 'id=fixture-primary-button' --device "$UDID" --json | jq -e '.ok == true' >/dev/null
 sleep 1
 "$CLI" ui screenshot --device "$UDID" --out "$OUT/after-tap.png" >/dev/null
 if [[ "$(shasum -a 256 "$OUT/before.png" | awk '{print $1}')" == "$(shasum -a 256 "$OUT/after-tap.png" | awk '{print $1}')" ]]; then
@@ -3720,9 +3716,9 @@ if [[ "$(shasum -a 256 "$OUT/before.png" | awk '{print $1}')" == "$(shasum -a 25
   exit 1
 fi
 
-"$CLI" ui tap --on 'id=email-field' --device "$UDID" --json >/dev/null
+"$CLI" ui tap --on 'id=fixture-text-field' --device "$UDID" --json >/dev/null
 "$CLI" ui type "agent@opensim.dev" --device "$UDID" --json | jq -e '.ok == true' >/dev/null
-"$CLI" ui tree --device "$UDID" --json | jq -e '[.. | objects | select(.identifier? == "email-field")][0].value == "agent@opensim.dev"' >/dev/null
+"$CLI" ui tree --device "$UDID" --json | jq -e '[.. | objects | select(.identifier? == "fixture-text-field")][0].value == "agent@opensim.dev"' >/dev/null
 
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"release-gate","version":"1.0"}}}' \
   | "$CLI" mcp --stdio \

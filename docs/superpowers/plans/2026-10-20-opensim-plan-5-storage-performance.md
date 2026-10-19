@@ -21,11 +21,13 @@
 - Không auto-delete, không dọn định kỳ, không xoá runtime hệ thống, không xoá `iOS DeviceSupport`, không xoá thư mục Xcode không xác định.
 - Xoá Xcode artifact bằng `FileManager.trashItem`; xoá simulator/runtime/app bằng `simctl` với argument array; không dùng shell string.
 - Ngưỡng mặc định: CPU > 150% trong 30 giây, RAM > 2 GB, disk free < 10 GB; ngưỡng cấu hình được.
-- Metrics sample mỗi 1 giây; ring buffer 10 phút; UI chỉ subscribe SSE khi tab Performance mở.
+- Metrics sample mỗi 1 giây khi Performance được bật hoặc có subscriber; ring buffer 10 phút; UI chỉ subscribe SSE khi view Performance mở và flag bật.
+- `DaemonRunner` phải mount storage/perf routes qua `DaemonRouteProvider`, tạo `StorageService`/`MetricsSampler`, gọi `sampler.start()` khi Performance bật và `stop()` khi shutdown; thiếu route/sampler thì Plan 5 chưa hoàn thành.
+- Kết thúc Plan 5: đổi `AppFeature.performance = true` và thay `case .performance: EmptyView()` trong `AppShell` bằng `PerformanceTabView`; cập nhật `ServiceShellUITests` để assert `sidebar-performance` tồn tại.
 - Khi dung lượng thu hồi > 20 GB, apply yêu cầu gõ đúng tên nhóm (`ARCHIVES`, `DERIVEDDATA`, `SIMULATORS`, `CACHES`, `LOGS`, `RUNTIMES`, `APPDATA`, `MULTIPLE`).
 - Không hiển thị hoặc ghi log nội dung file; chỉ ghi path, size, category và lỗi.
 - Không dùng mock data trong app; UI test dùng daemon thật với root fixture trong thư mục tạm.
-- Không tạo shell UI mới; tab Storage và Performance nằm trong shell của Plan 4.
+- Không tạo shell UI mới. Plan 4 giữ Storage shell; Performance ẩn sau `AppFeature.performance=false`. Plan 5 thay Storage shell bằng `StorageTabView` và bật Performance sau khi nối metrics.
 - Văn xuôi tiếng Việt; code, type, identifier, command tiếng Anh; không ký tự CJK.
 - Mọi task kết thúc bằng commit; người thực thi không chạy commit khi review plan.
 
@@ -34,9 +36,9 @@
 - Plan 1: `docs/superpowers/plans/2026-10-20-opensim-plan-1-core-bridge-cli.md`. Cung cấp `OpenSimCore`, `OpenSimBridge`, `DeviceControlling`, `RuntimeControlling`, `AppControlling`, `OperationCatalog`, envelope CLI và exit code.
 - Plan 2: `docs/superpowers/plans/2026-10-20-opensim-plan-2-screen-input-a11y.md`. Cung cấp `ScreenControlling`, `InputControlling`, `AccessibilityReading`, fixture iOS.
 - Plan 3: `docs/superpowers/plans/2026-10-20-opensim-plan-3-daemon-session-mcp.md`. Cung cấp `OpenSimProtocol`, HTTP server, SSE hub, lease middleware, `DaemonClient` và MCP tool registry. Plan 5 thêm route module và operation handler; không sửa semantics lease.
-- Plan 4: `docs/superpowers/plans/2026-10-20-opensim-plan-4-macos-app.md`. Cung cấp `App/Sources/OpenSimApp/App/` shell với tab Storage/Performance placeholder và `DaemonClient` phía app. Plan 5 thay placeholder bằng view thật.
+- Plan 4: `docs/superpowers/plans/2026-10-20-opensim-plan-4-macos-app.md`. Cung cấp sidebar native, `StorageShellView`, `AppFeature.performance=false` và `DaemonClient` struct. Plan 5 thay Storage shell bằng view thật và bật Performance sau khi nối metrics.
 - Contract: `docs/superpowers/plans/2026-10-20-plan-map-and-interfaces.md`. Tên type trong plan này tuân theo mục 4 và 5 của contract. Các type mới được định nghĩa đầy đủ trong task tương ứng.
-- Plan 3 và Plan 4 có thể chưa tồn tại khi plan này được viết. Điểm nối dự kiến: `Sources/OpenSimDaemon/Server/DaemonServer.swift` có hàm đăng ký route, `Sources/OpenSimDaemon/Server/SSEHub.swift` có `broadcast(event:data:)`, `Sources/OpenSimMCP/Tools/ToolRegistry.swift` có `register(_:)`, và app shell có `AppTab.storage`/`AppTab.performance`. Nếu tên thực tế khác, chỉ sửa file adapter được nêu trong task; không đổi controller, service hoặc test.
+- Điểm nối thực tế: Plan 3 dùng `EventHub.publish`, `MCPHandler`/`ToolCatalogAdapter`, `DaemonServer` với `DaemonRouteProvider`; Plan 4 dùng `AppTab`, `AppShell`, `DaemonClient` struct. Plan 5 đăng ký route provider/operation catalog, không tạo `SSEHub`/`ToolRegistry` song song. Không còn câu “nếu tên khác thì sửa sau”; mọi signature lấy từ Plan 3/4 hiện có.
 
 ## File Structure
 
@@ -49,7 +51,6 @@
 | `Sources/OpenSimCore/Metrics/MetricsThresholds.swift` | Ngưỡng, warning, snapshot theo device | Tạo |
 | `Sources/OpenSimProtocol/StorageEvents.swift` | Payload SSE `storage.scan.progress`/`storage.scan.completed` | Tạo |
 | `Sources/OpenSimProtocol/StorageMessages.swift` | Body HTTP scan/plan/apply | Tạo |
-| `Sources/OpenSimProtocol/MetricsMessages.swift` | Body HTTP perf và action | Tạo |
 | `Sources/OpenSimDaemon/Storage/StorageFileSystem.swift` | Protocol filesystem + implementation `FileManager` | Tạo |
 | `Sources/OpenSimDaemon/Storage/AllocatedSizeWalker.swift` | Đo allocated size, symlink, inaccessible, approximate | Tạo |
 | `Sources/OpenSimDaemon/Storage/StorageRoots.swift` | Root allowlist, canonical path, test override | Tạo |
@@ -74,8 +75,7 @@
 | `Sources/OpenSimDaemon/Metrics/MetricsThresholdEvaluator.swift` | CPU sustained, RAM, disk free | Tạo |
 | `Sources/OpenSimDaemon/Metrics/MetricsConfigurationStore.swift` | Đọc `config.json`, reload theo mtime | Tạo |
 | `Sources/OpenSimDaemon/Metrics/MetricsSampler.swift` | Tick 1 giây, aggregate, SSE | Tạo |
-| `Sources/OpenSimDaemon/Metrics/MetricsHTTP.swift` | Controller perf + action terminate/shutdown | Tạo |
-| `Sources/OpenSimDaemon/Metrics/MetricsHTTP.swift` | Controller và adapter HTTP cho perf | Tạo |
+| `Sources/OpenSimDaemon/Metrics/MetricsHTTP.swift` | Controller/adapter HTTP read-only cho perf | Tạo |
 | `Sources/OpenSimDaemon/Metrics/MetricsOperationHandler.swift` | Map perf operation sang MetricsSampler | Tạo |
 | `Sources/OpenSimCore/Catalog/StoragePerformanceOperations.swift` | Đăng ký `storage`/`perf` vào catalog | Tạo |
 | `Sources/OpenSimCLI/Commands/StorageCommand.swift` | `opensim storage scan/list/clean/reveal` | Tạo |
@@ -86,16 +86,16 @@
 | `Sources/OpenSimMCP/Tools/PerformanceTools.swift` | 2 tool perf | Tạo |
 | `App/Sources/OpenSimApp/Storage/StorageTabView.swift` | Tab Storage thật | Tạo |
 | `App/Sources/OpenSimApp/Storage/StorageTabModel.swift` | State, scan, plan, apply | Tạo |
-| `App/Sources/OpenSimApp/Storage/StorageCategoryChart.swift` | Biểu đồ dung lượng theo nhóm | Tạo |
-| `App/Sources/OpenSimApp/Storage/StorageItemTable.swift` | Danh sách item và chọn | Tạo |
+| `App/Sources/OpenSimApp/Storage/StorageItemTable.swift` | `Table` item native; thay chart/card | Tạo |
 | `App/Sources/OpenSimApp/Storage/StorageCleanSheet.swift` | Preview, cảnh báo, gõ tên nhóm | Tạo |
 | `App/Sources/OpenSimApp/Performance/PerformanceTabView.swift` | Tab Performance thật | Tạo |
 | `App/Sources/OpenSimApp/Performance/PerformanceTabModel.swift` | Subscribe SSE, snapshot, action | Tạo |
-| `App/Sources/OpenSimApp/Performance/PerformanceDeviceCard.swift` | Card CPU/RAM + sparkline | Tạo |
-| `App/Sources/OpenSimApp/Performance/MetricSparklineView.swift` | Sparkline 10 phút | Tạo |
-| `App/Sources/OpenSimApp/Performance/ProcessTableView.swift` | Process table + action | Tạo |
+| `App/Sources/OpenSimApp/Performance/PerformanceDeviceTable.swift` | `Table` device native; không card/sparkline | Tạo |
+| `App/Sources/OpenSimApp/Performance/PerformanceHistoryView.swift` | `Chart` native cho lịch sử 10 phút | Tạo |
+| `App/Sources/OpenSimApp/Performance/ProcessTableView.swift` | Process `Table` + action | Tạo |
 | `App/Sources/OpenSimApp/Performance/PerformanceThresholdBanner.swift` | Banner ngưỡng | Tạo |
-| `App/Sources/OpenSimApp/App/AppShell.swift` | Thay placeholder bằng tab thật | Sửa (Plan 4) |
+| `App/Sources/OpenSimApp/App/AppShell.swift` | Thay Storage shell; thêm PerformanceTabView | Sửa (Plan 4) |
+| `App/Sources/OpenSimApp/App/AppFeature.swift` | Bật `performance` sau khi nối metrics | Sửa (Plan 4) |
 | `App/Sources/OpenSimApp/App/DaemonClient.swift` | Thêm method storage/perf | Sửa (Plan 4) |
 | `Sources/OpenSimDaemon/Server/DaemonServer.swift` | Gọi adapter route storage/perf | Sửa (Plan 3) |
 | `Sources/OpenSimDaemon/Server/SSEHub.swift` | Dùng `broadcast` sẵn có | Đọc (Plan 3) |
@@ -2281,7 +2281,18 @@ public actor StorageScanner {
         let roots = resolver.roots().filter { root in
             selected?.contains(root.category) ?? true
         }
-        let booted = (try? await metadata.bootedDeviceIDs()) ?? []
+        let booted: Set<DeviceID>
+        do {
+            booted = try await metadata.bootedDeviceIDs()
+        } catch {
+            throw OpenSimError(
+                code: "storage_scan_failed",
+                message: "Could not verify booted devices; refusing to mark storage as safe",
+                details: ["reason": String(describing: error)],
+                recovery: "Retry after simulator inventory is available",
+                retryable: true
+            )
+        }
         var progressValue = StorageScanProgress(
             scanID: scanID,
             phase: .preparing,
@@ -2584,6 +2595,9 @@ Append vào `Tests/OpenSimDaemonTests/StorageScannerTests.swift`:
     private struct FakeRuntimeControl: RuntimeControlling {
         var runtimes: [Runtime]
         func listRuntimes() async throws -> [Runtime] { runtimes }
+        func downloadRuntime(platform: Platform, version: String) async throws -> Runtime {
+            runtimes.first { $0.platform == platform && $0.version == version } ?? runtimes[0]
+        }
         func installRuntime(at path: String) async throws -> Runtime { runtimes[0] }
         func deleteRuntime(_ id: RuntimeID) async throws {}
     }
@@ -4143,7 +4157,18 @@ public actor StorageService: StorageServing, StorageManaging {
                 retryable: false
             )
         }
-        let booted = (try? await metadata.bootedDeviceIDs()) ?? []
+        let booted: Set<DeviceID>
+        do {
+            booted = try await metadata.bootedDeviceIDs()
+        } catch {
+            throw OpenSimError(
+                code: "storage_scan_failed",
+                message: "Could not verify booted devices; refusing to create a clean plan",
+                details: ["reason": String(describing: error)],
+                recovery: "Retry after simulator inventory is available",
+                retryable: true
+            )
+        }
         let flattened = Self.flatten(result.scan.items)
         var snapshots: [CleanPlanItemSnapshot] = []
         var blocked: [BlockedStorageItem] = []
@@ -4257,7 +4282,18 @@ public actor StorageService: StorageServing, StorageManaging {
                 )
             }
         }
-        let booted = (try? await metadata.bootedDeviceIDs()) ?? []
+        let booted: Set<DeviceID>
+        do {
+            booted = try await metadata.bootedDeviceIDs()
+        } catch {
+            throw OpenSimError(
+                code: "storage_scan_failed",
+                message: "Could not verify booted devices; refusing to apply the clean plan",
+                details: ["reason": String(describing: error)],
+                recovery: "Retry after simulator inventory is available",
+                retryable: true
+            )
+        }
         for snapshot in plan.items {
             guard fileSystem.fileExists(atPath: snapshot.path) else {
                 throw OpenSimError(
@@ -5358,7 +5394,19 @@ extension DaemonClient: OperationExecuting {
 
 `StorageCommandRunner` và test không phụ thuộc client cụ thể.
 
-Gọi `catalog.registerStoragePerformanceOperations()` một lần trong catalog bootstrap của Plan 1, trước khi CLI và MCP build danh sách operation. Không đăng ký lặp ở hai nơi; nếu Plan 1 đã có hook `registerPlanOperations`, thêm lời gọi vào hook đó.
+Thêm factory duy nhất trong `StoragePerformanceOperations.swift`:
+
+```swift
+public extension OperationCatalog {
+    static func plan5() -> OperationCatalog {
+        var catalog = OperationCatalog.plan3()
+        catalog.registerStoragePerformanceOperations()
+        return catalog
+    }
+}
+```
+
+Sau đó Plan 5 sửa composition thực tế của daemon (`DaemonRunner`), CLI daemon backend và MCP handler từ `plan3()` sang `plan5()`; Plan 7/9 dùng cùng factory, không gọi `registerUIOperations()`/hook tưởng tượng. Test catalog phải assert có đồng thời `ui_tap`, `storage_scan`, `perf_devices`.
 
 - [ ] **Step 5: Chạy test để thấy pass**
 
@@ -6101,7 +6149,6 @@ git commit -m "feat(metrics): map simulator processes by argv, tree and env"
 
 **Files:**
 - Create: `Sources/OpenSimCore/Metrics/MetricsThresholds.swift`
-- Create: `Sources/OpenSimProtocol/MetricsMessages.swift`
 - Create: `Sources/OpenSimDaemon/Metrics/MetricsRingBuffer.swift`
 - Create: `Sources/OpenSimDaemon/Metrics/MetricsThresholdEvaluator.swift`
 - Create: `Sources/OpenSimDaemon/Metrics/MetricsConfigurationStore.swift`
@@ -6113,7 +6160,7 @@ git commit -m "feat(metrics): map simulator processes by argv, tree and env"
 
 **Interfaces:**
 - Consumes: `ProcessSampling`, `ProcessMapper`, `ProcessRecord` từ Task 12; `MetricSample`, `ProcessSample`, `DeviceID`; `AppControlling`, `DeviceControlling`.
-- Produces: `MetricsThresholds`, `MetricsWarning`, `DeviceMetricsSnapshot`; `MetricsRingBuffer`; `MetricsThresholdEvaluator`; `MetricsConfigurationStore`; `MetricsSampler`; `MetricsServing`, `MetricsActionPerforming`, `BridgeMetricsActions`, `MetricsHTTPController`.
+- Produces: `MetricsThresholds`, `MetricsWarning`, `DeviceMetricsSnapshot`; `MetricsRingBuffer`; `MetricsThresholdEvaluator`; `MetricsConfigurationStore`; `MetricsSampler`; `MetricsServing`, `MetricsHTTPController` (read-only).
 
 - [ ] **Step 1: Viết test ring và threshold thất bại**
 
@@ -6700,27 +6747,6 @@ public actor MetricsSampler: MetricsServing {
 
 - [ ] **Step 6: Viết HTTP controller**
 
-Create `Sources/OpenSimProtocol/MetricsMessages.swift`:
-
-```swift
-import Foundation
-
-public struct MetricsActionRequest: Codable, Sendable {
-    public enum Action: String, Codable, Sendable {
-        case terminateApp
-        case shutdown
-    }
-
-    public var action: Action
-    public var bundleID: String?
-
-    public init(action: Action, bundleID: String?) {
-        self.action = action
-        self.bundleID = bundleID
-    }
-}
-```
-
 Create `Sources/OpenSimDaemon/Metrics/MetricsHTTP.swift`:
 
 ```swift
@@ -6734,29 +6760,6 @@ public protocol MetricsServing: Sendable {
 }
 
 extension MetricsSampler: MetricsServing {}
-
-public protocol MetricsActionPerforming: Sendable {
-    func terminateApp(on device: DeviceID, bundleID: String) async throws
-    func shutdown(_ device: DeviceID) async throws
-}
-
-public struct BridgeMetricsActions: MetricsActionPerforming {
-    private let apps: any AppControlling
-    private let devices: any DeviceControlling
-
-    public init(apps: any AppControlling, devices: any DeviceControlling) {
-        self.apps = apps
-        self.devices = devices
-    }
-
-    public func terminateApp(on device: DeviceID, bundleID: String) async throws {
-        try await apps.terminateApp(on: device, bundleID: bundleID)
-    }
-
-    public func shutdown(_ device: DeviceID) async throws {
-        _ = try await devices.shutdown(device, wait: true)
-    }
-}
 
 public struct PerfHTTPRequest: Sendable {
     public var method: String
@@ -6786,19 +6789,13 @@ public struct PerfHTTPResponse: Sendable {
 
 public struct MetricsHTTPController: Sendable {
     private let metrics: any MetricsServing
-    private let actions: any MetricsActionPerforming
     private let encoder: JSONEncoder
-    private let decoder: JSONDecoder
 
-    public init(metrics: any MetricsServing, actions: any MetricsActionPerforming) {
+    public init(metrics: any MetricsServing) {
         self.metrics = metrics
-        self.actions = actions
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         self.encoder = encoder
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        self.decoder = decoder
     }
 
     public func handle(_ request: PerfHTTPRequest) async -> PerfHTTPResponse? {
@@ -6815,26 +6812,6 @@ public struct MetricsHTTPController: Sendable {
             if request.method == "GET", parts.count == 5, parts[2] == "devices", parts[4] == "processes" {
                 let samples = await metrics.processes(deviceID: DeviceID(rawValue: parts[3]))
                 return try reply(samples, status: 200)
-            }
-            if request.method == "POST", parts.count == 5, parts[2] == "devices", parts[4] == "actions" {
-                let body = try decoder.decode(MetricsActionRequest.self, from: request.body)
-                let deviceID = DeviceID(rawValue: parts[3])
-                switch body.action {
-                case .terminateApp:
-                    guard let bundleID = body.bundleID else {
-                        throw OpenSimError(
-                            code: "invalid_argument",
-                            message: "bundleID is required for terminateApp",
-                            details: [:],
-                            recovery: "Pass bundleID",
-                            retryable: false
-                        )
-                    }
-                    try await actions.terminateApp(on: deviceID, bundleID: bundleID)
-                case .shutdown:
-                    try await actions.shutdown(deviceID)
-                }
-                return try reply(EmptyPayload(), status: 202)
             }
             return nil
         } catch let error as OpenSimError {
@@ -6914,41 +6891,19 @@ final class PerformanceHTTPTests: XCTestCase {
         func processes(deviceID: DeviceID) async -> [ProcessSample] { [] }
     }
 
-    private actor FakeActions: MetricsActionPerforming {
-        var terminated: [(DeviceID, String)] = []
-        var shutdown: [DeviceID] = []
-
-        func terminateApp(on device: DeviceID, bundleID: String) async throws {
-            terminated.append((device, bundleID))
-        }
-
-        func shutdown(_ device: DeviceID) async throws {
-            shutdown.append(device)
-        }
-    }
-
-    func testActionRoutesToTerminateApp() async throws {
-        let actions = FakeActions()
-        let controller = MetricsHTTPController(
-            metrics: FakeMetrics(snapshotsValue: []),
-            actions: actions
-        )
+    func testActionRoutesAreNotExposed() async {
+        let controller = MetricsHTTPController(metrics: FakeMetrics(snapshotsValue: []))
         let request = PerfHTTPRequest(
             method: "POST",
             path: "/v1/perf/devices/11111111-2222-3333-4444-555555555555/actions",
             query: [:],
-            body: try JSONEncoder().encode(
-                MetricsActionRequest(action: .terminateApp, bundleID: "dev.opensim.fixture")
-            )
+            body: Data()
         )
-        let response = try XCTUnwrap(await controller.handle(request))
-        XCTAssertEqual(response.status, 202)
-        let terminated = await actions.terminated
-        XCTAssertEqual(terminated.first?.1, "dev.opensim.fixture")
+        XCTAssertNil(await controller.handle(request))
     }
 
     func testUnknownPerfRouteReturnsNil() async {
-        let controller = MetricsHTTPController(metrics: FakeMetrics(snapshotsValue: []), actions: FakeActions())
+        let controller = MetricsHTTPController(metrics: FakeMetrics(snapshotsValue: []))
         let response = await controller.handle(
             PerfHTTPRequest(method: "GET", path: "/v1/storage/scans", query: [:], body: Data())
         )
@@ -6972,7 +6927,7 @@ Expected: PASS 5 test.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add Sources/OpenSimCore/Metrics/MetricsThresholds.swift Sources/OpenSimProtocol/MetricsMessages.swift Sources/OpenSimDaemon/Metrics/MetricsRingBuffer.swift Sources/OpenSimDaemon/Metrics/MetricsThresholdEvaluator.swift Sources/OpenSimDaemon/Metrics/MetricsConfigurationStore.swift Sources/OpenSimDaemon/Metrics/MetricsSampler.swift Sources/OpenSimDaemon/Metrics/MetricsHTTP.swift Tests/OpenSimCoreTests/MetricsThresholdsTests.swift Tests/OpenSimDaemonTests/MetricsSamplerTests.swift Tests/OpenSimDaemonTests/PerformanceHTTPTests.swift
+git add Sources/OpenSimCore/Metrics/MetricsThresholds.swift Sources/OpenSimDaemon/Metrics/MetricsRingBuffer.swift Sources/OpenSimDaemon/Metrics/MetricsThresholdEvaluator.swift Sources/OpenSimDaemon/Metrics/MetricsConfigurationStore.swift Sources/OpenSimDaemon/Metrics/MetricsSampler.swift Sources/OpenSimDaemon/Metrics/MetricsHTTP.swift Tests/OpenSimCoreTests/MetricsThresholdsTests.swift Tests/OpenSimDaemonTests/MetricsSamplerTests.swift Tests/OpenSimDaemonTests/PerformanceHTTPTests.swift
 git commit -m "feat(metrics): add sampler, ring buffer, thresholds and perf HTTP"
 ```
 
@@ -7449,7 +7404,6 @@ git commit -m "feat(perf): add CLI and MCP performance tools"
 **Files:**
 - Create: `App/Sources/OpenSimApp/Storage/StorageTabModel.swift`
 - Create: `App/Sources/OpenSimApp/Storage/StorageTabView.swift`
-- Create: `App/Sources/OpenSimApp/Storage/StorageCategoryChart.swift`
 - Create: `App/Sources/OpenSimApp/Storage/StorageItemTable.swift`
 - Create: `App/Sources/OpenSimApp/Storage/StorageCleanSheet.swift`
 - Modify: `App/Sources/OpenSimApp/App/AppShell.swift` (Plan 4)
@@ -7458,7 +7412,7 @@ git commit -m "feat(perf): add CLI and MCP performance tools"
 
 **Interfaces:**
 - Consumes: `StorageScanStatus`, `StorageScan`, `StorageItemDetail`, `CleanPlanDetail`, `CleanApplyResult`; app daemon client của Plan 4.
-- Produces: `StorageAPIClient` protocol, `StorageTabModel`, `StorageTabView`, `StorageCategoryChart`, `StorageItemTable`, `StorageCleanSheet`.
+- Produces: `StorageAPIClient` protocol, `StorageTabModel`, `StorageTabView`, `StorageItemTable`, `StorageCleanSheet`.
 
 - [ ] **Step 1: Viết UI test thất bại**
 
@@ -7504,16 +7458,16 @@ final class StorageTabUITests: XCTestCase {
 
     func testStorageTabShowsRealScanAndCleanSheet() throws {
         let app = XCUIApplication()
-        app.buttons["sidebar-storage"].click()
+        app.cells["sidebar-storage"].click()
         let scanButton = app.buttons["storage-scan-button"]
         XCTAssertTrue(scanButton.waitForExistence(timeout: 10))
         scanButton.click()
 
-        let total = app.staticTexts["storage-total"]
+        let total = app.otherElements["storage-summary"]
         XCTAssertTrue(total.waitForExistence(timeout: 20))
         XCTAssertTrue(total.label.contains("MB") || total.label.contains("GB"))
 
-        let row = app.buttons["storage-item-archive"]
+        let row = app.staticTexts["storage-row-archive"]
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.click()
 
@@ -7550,8 +7504,7 @@ import Observation
 import OpenSimCore
 import OpenSimProtocol
 
-@MainActor
-public protocol StorageAPIClient: AnyObject {
+public protocol StorageAPIClient: Sendable {
     func startStorageScan(refresh: Bool) async throws -> StorageScanStatus
     func storageStatus(id: String) async throws -> StorageScanStatus
     func storageItems(scanID: String, parentID: String?) async throws -> [StorageItem]
@@ -7676,102 +7629,14 @@ public final class StorageTabModel {
 }
 ```
 
-- [ ] **Step 4: Viết views**
+- [ ] **Step 4: Viết views
 
-Create `App/Sources/OpenSimApp/Storage/StorageTabView.swift`:
-
-```swift
-import SwiftUI
-import OpenSimCore
-
-public struct StorageTabView: View {
-    @State private var model: StorageTabModel
-    @State private var showsCleanSheet = false
-
-    public init(model: StorageTabModel) {
-        _model = State(initialValue: model)
-    }
-
-    public var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            header
-            if let scan = model.scan {
-                StorageCategoryChart(items: scan.items, approximate: scan.approximate)
-                    .frame(height: 160)
-                StorageItemTable(model: model)
-            } else {
-                ContentUnavailableView(
-                    "No storage scan",
-                    systemImage: "internaldrive",
-                    description: Text("Run a scan to inspect simulator, Xcode and runtime storage.")
-                )
-            }
-        }
-        .padding(16)
-        .frame(minWidth: 720, minHeight: 520)
-        .sheet(isPresented: $showsCleanSheet) {
-            if let plan = model.plan {
-                StorageCleanSheet(model: model, plan: plan)
-            }
-        }
-        .onChange(of: model.selectedItemIDs) { _, _ in
-            Task { await model.preparePlan() }
-        }
-        .accessibilityIdentifier("storage-tab")
-    }
-
-    private var header: some View {
-        HStack(spacing: 12) {
-            Button("Scan") { model.scanStorage() }
-                .keyboardShortcut("r", modifiers: [.command])
-                .accessibilityIdentifier("storage-scan-button")
-            if let scan = model.scan {
-                Text("Total \(ByteCountFormatter.string(fromByteCount: scan.totalBytes, countStyle: .file))")
-                    .accessibilityIdentifier("storage-total")
-                Text("Reclaimable \(ByteCountFormatter.string(fromByteCount: scan.reclaimableBytes, countStyle: .file))")
-                if scan.approximate {
-                    Label("Approximate size", systemImage: "info.circle")
-                        .help("APFS clones and hard links can make the sum larger than the space freed")
-                }
-            }
-            Spacer()
-            Button("Clean selected") { showsCleanSheet = true }
-                .disabled(model.selectedItemIDs.isEmpty || model.plan == nil)
-                .accessibilityIdentifier("storage-clean-button")
-        }
-    }
-}
-```
-
-Create `App/Sources/OpenSimApp/Storage/StorageCategoryChart.swift`:
+Thêm method vào `StorageTabModel`:
 
 ```swift
-import Charts
-import SwiftUI
-import OpenSimCore
-
-public struct StorageCategoryChart: View {
-    public let items: [StorageItem]
-    public let approximate: Bool
-
-    public init(items: [StorageItem], approximate: Bool) {
-        self.items = items
-        self.approximate = approximate
-    }
-
-    public var body: some View {
-        Chart(items) { item in
-            BarMark(
-                x: .value("Size", item.sizeBytes),
-                y: .value("Category", item.category.rawValue)
-            )
-            .foregroundStyle(by: .value("Category", item.category.rawValue))
-        }
-        .chartXAxis {
-            AxisMarks(format: .byteCount(style: .file))
-        }
-        .accessibilityIdentifier("storage-category-chart")
-    }
+public func setSelection(_ ids: Set<String>) {
+    selectedItemIDs = ids
+    plan = nil
 }
 ```
 
@@ -7783,49 +7648,138 @@ import OpenSimCore
 
 public struct StorageItemTable: View {
     @Bindable private var model: StorageTabModel
+    private let rows: [StorageItem]
 
-    public init(model: StorageTabModel) {
+    public init(model: StorageTabModel, rows: [StorageItem]) {
         self.model = model
+        self.rows = rows
     }
 
     public var body: some View {
-        List {
-            ForEach(model.scan?.items ?? []) { root in
-                Section(root.category.rawValue) {
-                    ForEach(root.children) { item in
-                        row(item)
-                    }
-                }
-            }
-        }
-        .listStyle(.inset)
-        .accessibilityIdentifier("storage-item-list")
-    }
-
-    private func row(_ item: StorageItem) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: item.safeToDelete ? "checkmark.circle" : "lock.circle")
-                .foregroundStyle(item.safeToDelete ? Color.green : Color.orange)
-            VStack(alignment: .leading, spacing: 2) {
+        Table(rows, selection: Binding(
+            get: { model.selectedItemIDs },
+            set: { model.setSelection($0) }
+        )) {
+            TableColumn("Item") { item in
                 Text(item.path)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                if let reason = item.reason {
-                    Text(reason).font(.caption).foregroundStyle(.secondary)
-                }
+                    .accessibilityIdentifier("storage-row-\(item.id)")
             }
-            Spacer()
-            Text(ByteCountFormatter.string(fromByteCount: item.sizeBytes, countStyle: .file))
-                .monospacedDigit()
-            Toggle("", isOn: Binding(
-                get: { model.selectedItemIDs.contains(item.id) },
-                set: { _ in model.toggleSelection(item) }
-            ))
-            .labelsHidden()
-            .disabled(!item.safeToDelete)
-            .accessibilityIdentifier("storage-item-\(item.category.rawValue)")
+            TableColumn("Size") { item in
+                Text(ByteCountFormatter.string(fromByteCount: item.sizeBytes, countStyle: .file))
+                    .monospacedDigit()
+            }
+            .width(90)
+            TableColumn("Last used") { item in
+                Text(item.lastUsedAt.map { RelativeDateTimeFormatter().localizedString(for: $0, relativeTo: Date()) } ?? "—")
+                    .foregroundStyle(.secondary)
+            }
+            .width(130)
+            TableColumn("Safety") { item in
+                Text(item.safeToDelete ? "Safe" : "In use")
+                    .foregroundStyle(item.safeToDelete ? .secondary : .orange)
+            }
+            .width(80)
         }
-        .accessibilityElement(children: .combine)
+        .selectionDisabled { item in !item.safeToDelete }
+        .accessibilityIdentifier("storage-table")
+    }
+}
+```
+
+Create `App/Sources/OpenSimApp/Storage/StorageTabView.swift`:
+
+```swift
+import SwiftUI
+import OpenSimCore
+
+public struct StorageTabView: View {
+    @State private var model: StorageTabModel
+    @State private var category: StorageCategory?
+    @State private var showsCleanSheet = false
+
+    public init(model: StorageTabModel) {
+        _model = State(initialValue: model)
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Picker("Category", selection: $category) {
+                    Text("All").tag(StorageCategory?.none)
+                    ForEach(StorageCategory.allCases, id: \.self) { value in
+                        Text(value.rawValue).tag(StorageCategory?.some(value))
+                    }
+                }
+                .accessibilityIdentifier("storage-filter")
+                Spacer()
+                Button("Scan") { model.scanStorage() }
+                    .keyboardShortcut("r", modifiers: [.command])
+                    .accessibilityIdentifier("storage-scan-button")
+            }
+            if let scan = model.scan {
+                summary(scan)
+                StorageItemTable(model: model, rows: filtered(scan.items))
+                    .frame(maxHeight: .infinity)
+                Divider()
+                HStack {
+                    Text(selectionSummary)
+                        .accessibilityIdentifier("storage-selection")
+                    Spacer()
+                    Button("Review clean plan") {
+                        Task {
+                            await model.preparePlan()
+                            showsCleanSheet = model.plan != nil
+                        }
+                    }
+                    .disabled(model.selectedItemIDs.isEmpty || model.state == .scanning)
+                    .accessibilityIdentifier("storage-clean-button")
+                }
+            } else {
+                ContentUnavailableView(
+                    "No storage scan",
+                    systemImage: "internaldrive",
+                    description: Text("Scan simulator, Xcode and runtime storage.")
+                )
+                .accessibilityIdentifier("storage-empty")
+            }
+        }
+        .padding(16)
+        .frame(minWidth: 720, minHeight: 520)
+        .sheet(isPresented: $showsCleanSheet) {
+            if let plan = model.plan {
+                StorageCleanSheet(model: model, plan: plan)
+            }
+        }
+        .task { model.scanStorage() }
+        .accessibilityIdentifier("storage-tab")
+    }
+
+    private var selectionSummary: String {
+        let count = model.selectedItemIDs.count
+        return count == 0 ? "No items selected" : "\(count) selected"
+    }
+
+    private func filtered(_ items: [StorageItem]) -> [StorageItem] {
+        guard let category else { return items }
+        return items.filter { $0.category == category }
+    }
+
+    private func summary(_ scan: StorageScan) -> some View {
+        HStack(spacing: 8) {
+            Text(ByteCountFormatter.string(fromByteCount: scan.reclaimableBytes, countStyle: .file))
+                .fontWeight(.semibold)
+            Text("reclaimable")
+            Text("·")
+            Text(ByteCountFormatter.string(fromByteCount: scan.totalBytes, countStyle: .file))
+            Text("scanned")
+            if scan.approximate { Text("· approximate") }
+            Spacer()
+        }
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .accessibilityIdentifier("storage-summary")
     }
 }
 ```
@@ -7847,42 +7801,30 @@ public struct StorageCleanSheet: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Clean storage").font(.title2.bold())
-            Text("Reclaim \(ByteCountFormatter.string(fromByteCount: plan.plan.reclaimableBytes, countStyle: .file))")
-                .accessibilityIdentifier("storage-plan-total")
-            Text("Token \(plan.plan.token)")
-                .font(.caption.monospaced())
-                .textSelection(.enabled)
-                .accessibilityIdentifier("storage-plan-token")
-            if plan.approximate {
-                Text("Sizes are approximate because APFS clones and hard links share blocks.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Review clean plan").font(.title3.bold())
+            List(plan.plan.items, id: \.itemID) { item in
+                HStack {
+                    Text(item.path).lineLimit(1).truncationMode(.middle)
+                    Spacer()
+                    Text(ByteCountFormatter.string(fromByteCount: item.sizeBytes, countStyle: .file))
+                        .monospacedDigit()
+                }
             }
-            ForEach(plan.blocked, id: \.item.id) { blocked in
-                Label(blocked.reason, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.orange)
-            }
+            .frame(minHeight: 180)
+            Text("Frees \(ByteCountFormatter.string(fromByteCount: plan.totalBytes, countStyle: .file)) · plan expires in 5 minutes")
+                .font(.callout)
+                .foregroundStyle(.secondary)
             if plan.requiresTypedConfirmation {
-                Text("Type \(plan.confirmationPhrase ?? "MULTIPLE") to confirm more than 20 GB")
-                    .font(.callout.bold())
-                TextField("Confirmation phrase", text: $model.confirmationPhrase)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityIdentifier("storage-phrase-field")
-            }
-            if let error = model.applyError {
-                Text(error).foregroundStyle(.red)
+                TextField("Type the confirmation phrase", text: $model.confirmationPhrase)
+                    .accessibilityIdentifier("storage-confirm-phrase")
             }
             HStack {
-                Button("Cancel", role: .cancel) { dismiss() }
-                    .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Apply") {
-                    Task {
-                        await model.applyPlan()
-                        if model.plan == nil { dismiss() }
-                    }
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Apply clean") {
+                    Task { await model.applyPlan() }
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(!model.canApply)
@@ -7896,7 +7838,7 @@ public struct StorageCleanSheet: View {
 }
 ```
 
-Sửa `App/Sources/OpenSimApp/App/AppShell.swift`: thay placeholder của Plan 4 bằng `StorageTabView(model: storageModel)` trong case `.storage`. Không thêm tab, không thêm cửa sổ.
+Hiển thị kết quả từng item sau apply, giữ item fail trong selection.
 
 - [ ] **Step 5: Nối `DaemonClient` của app**
 
@@ -7970,17 +7912,18 @@ git commit -m "feat(app): add storage tab with real scan and clean sheet"
 **Files:**
 - Create: `App/Sources/OpenSimApp/Performance/PerformanceTabModel.swift`
 - Create: `App/Sources/OpenSimApp/Performance/PerformanceTabView.swift`
-- Create: `App/Sources/OpenSimApp/Performance/PerformanceDeviceCard.swift`
-- Create: `App/Sources/OpenSimApp/Performance/MetricSparklineView.swift`
+- Create: `App/Sources/OpenSimApp/Performance/PerformanceDeviceTable.swift`
+- Create: `App/Sources/OpenSimApp/Performance/PerformanceHistoryView.swift`
 - Create: `App/Sources/OpenSimApp/Performance/ProcessTableView.swift`
 - Create: `App/Sources/OpenSimApp/Performance/PerformanceThresholdBanner.swift`
 - Modify: `App/Sources/OpenSimApp/App/AppShell.swift` (Plan 4)
+- Modify: `App/Sources/OpenSimApp/App/AppFeature.swift` (Plan 4, bật flag)
 - Modify: `App/Sources/OpenSimApp/App/DaemonClient.swift` (Plan 4)
 - Test: `Tests/OpenSimAppUITests/PerformanceTabUITests.swift`
 
 **Interfaces:**
 - Consumes: `DeviceMetricsSnapshot`, `MetricSample`, `ProcessSample`, `MetricsWarning`; `DaemonClient`.
-- Produces: `PerformanceAPIClient`, `PerformanceTabModel`, `PerformanceTabView`, `PerformanceDeviceCard`, `MetricSparklineView`, `ProcessTableView`, `PerformanceThresholdBanner`.
+- Produces: `PerformanceAPIClient`, `PerformanceTabModel`, `PerformanceTabView`, `PerformanceDeviceTable`, `PerformanceHistoryView`, `ProcessTableView`, `PerformanceThresholdBanner`.
 
 - [ ] **Step 1: Viết UI test thất bại**
 
@@ -7996,14 +7939,14 @@ final class PerformanceTabUITests: XCTestCase {
         app.launchEnvironment["OPENSIM_TESTING"] = "1"
         app.launch()
 
-        app.buttons["sidebar-performance"].click()
-        let card = app.otherElements["performance-device-card"]
-        XCTAssertTrue(card.waitForExistence(timeout: 20))
-        XCTAssertTrue(app.staticTexts["performance-cpu-value"].exists)
-        XCTAssertTrue(app.staticTexts["performance-memory-value"].exists)
+        app.cells["sidebar-performance"].click()
+        let table = app.otherElements["performance-table"]
+        XCTAssertTrue(table.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts["performance-cpu"].exists)
+        XCTAssertTrue(app.staticTexts["performance-memory"].exists)
         XCTAssertTrue(app.tables["performance-process-table"].exists)
-        XCTAssertTrue(app.buttons["performance-terminate-app"].exists)
-        XCTAssertTrue(app.buttons["performance-shutdown-device"].exists)
+        XCTAssertFalse(app.buttons["performance-terminate-app"].exists)
+        XCTAssertFalse(app.buttons["performance-shutdown-device"].exists)
     }
 }
 ```
@@ -8029,12 +7972,9 @@ import Observation
 import OpenSimCore
 import OpenSimProtocol
 
-@MainActor
-public protocol PerformanceAPIClient: AnyObject {
+public protocol PerformanceAPIClient: Sendable {
     func metricsSince(_ since: Date?) async throws -> [DeviceMetricsSnapshot]
     func processes(deviceID: DeviceID) async throws -> [ProcessSample]
-    func terminateApp(deviceID: DeviceID, bundleID: String) async throws
-    func shutdownDevice(deviceID: DeviceID) async throws
     func metricsStream() -> AsyncStream<[DeviceMetricsSnapshot]>
 }
 
@@ -8104,24 +8044,6 @@ public final class PerformanceTabModel {
         }
     }
 
-    public func terminate(bundleID: String) async {
-        guard let selectedDeviceID else { return }
-        do {
-            try await client.terminateApp(deviceID: selectedDeviceID, bundleID: bundleID)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    public func shutdownSelectedDevice() async {
-        guard let selectedDeviceID else { return }
-        do {
-            try await client.shutdownDevice(deviceID: selectedDeviceID)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
     private func appendHistory(_ batch: [DeviceMetricsSnapshot]) {
         for snapshot in batch {
             var samples = history[snapshot.sample.deviceID, default: []]
@@ -8145,6 +8067,87 @@ public final class PerformanceTabModel {
 
 - [ ] **Step 4: Viết views**
 
+Create `App/Sources/OpenSimApp/Performance/PerformanceDeviceTable.swift`:
+
+```swift
+import SwiftUI
+import OpenSimCore
+
+public struct PerformanceDeviceTable: View {
+    @Bindable private var model: PerformanceTabModel
+
+    public init(model: PerformanceTabModel) {
+        self.model = model
+    }
+
+    public var body: some View {
+        Table(model.snapshots, selection: Binding(
+            get: { model.selectedDeviceID },
+            set: { value in if let value { model.select(value) } }
+        )) {
+            TableColumn("Device") { snapshot in
+                Text(snapshot.sample.deviceID.rawValue)
+                    .lineLimit(1)
+                    .accessibilityIdentifier("performance-device-\(snapshot.sample.deviceID.rawValue)")
+            }
+            TableColumn("CPU") { snapshot in
+                Text("\(snapshot.sample.cpuPercent, specifier: "%.1f")%")
+                    .monospacedDigit()
+                    .accessibilityIdentifier("performance-cpu")
+            }
+            .width(80)
+            TableColumn("Memory") { snapshot in
+                Text(ByteCountFormatter.string(fromByteCount: Int64(snapshot.sample.memoryBytes), countStyle: .memory))
+                    .monospacedDigit()
+                    .accessibilityIdentifier("performance-memory")
+            }
+            .width(100)
+            TableColumn("Processes") { snapshot in
+                Text("\(snapshot.sample.processCount)").monospacedDigit()
+            }
+            .width(90)
+            TableColumn("Warning") { snapshot in
+                Text(snapshot.warnings.isEmpty ? "—" : "\(snapshot.warnings.count)")
+                    .foregroundStyle(snapshot.warnings.isEmpty ? .secondary : .orange)
+            }
+            .width(80)
+        }
+        .accessibilityIdentifier("performance-table")
+    }
+}
+```
+
+Create `App/Sources/OpenSimApp/Performance/PerformanceHistoryView.swift`:
+
+```swift
+import Charts
+import SwiftUI
+import OpenSimCore
+
+public struct PerformanceHistoryView: View {
+    public let samples: [MetricSample]
+
+    public init(samples: [MetricSample]) {
+        self.samples = samples
+    }
+
+    public var body: some View {
+        Chart(samples) { sample in
+            LineMark(
+                x: .value("Time", sample.timestamp),
+                y: .value("CPU %", sample.cpuPercent)
+            )
+            .interpolationMethod(.catmullRom)
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading)
+        }
+        .frame(height: 160)
+        .accessibilityIdentifier("performance-history")
+    }
+}
+```
+
 Create `App/Sources/OpenSimApp/Performance/PerformanceTabView.swift`:
 
 ```swift
@@ -8161,45 +8164,38 @@ public struct PerformanceTabView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Performance").font(.title2.bold())
-                Spacer()
-                Text(model.isConnected ? "Live" : "Reconnecting")
-                    .foregroundStyle(model.isConnected ? .green : .orange)
+                Text("Live").foregroundStyle(model.isConnected ? .green : .orange)
                     .accessibilityIdentifier("performance-connection")
+                Spacer()
             }
             PerformanceThresholdBanner(warnings: model.warnings)
-            ScrollView(.horizontal) {
-                HStack(spacing: 12) {
-                    ForEach(model.snapshots, id: \.sample.deviceID) { snapshot in
-                        PerformanceDeviceCard(
-                            snapshot: snapshot,
-                            samples: model.samples(for: snapshot.sample.deviceID),
-                            selected: model.selectedDeviceID == snapshot.sample.deviceID
-                        )
-                        .onTapGesture { model.select(snapshot.sample.deviceID) }
-                    }
-                }
-            }
+            PerformanceDeviceTable(model: model)
+                .frame(minHeight: 160)
             if let snapshot = model.selectedSnapshot {
-                HStack(spacing: 10) {
-                    Button("Terminate app") {
-                        Task { await model.terminate(bundleID: "dev.opensim.fixture") }
+                HStack(alignment: .top, spacing: 16) {
+                    Gauge(value: snapshot.sample.cpuPercent, in: 0...100) {
+                        Text("CPU")
+                    } currentValueLabel: {
+                        Text("\(snapshot.sample.cpuPercent, specifier: "%.1f")%")
                     }
-                    .accessibilityIdentifier("performance-terminate-app")
-                    Button("Shutdown device", role: .destructive) {
-                        Task { await model.shutdownSelectedDevice() }
+                    .gaugeStyle(.accessoryCircular)
+                    VStack(alignment: .leading) {
+                        Text(ByteCountFormatter.string(fromByteCount: Int64(snapshot.sample.memoryBytes), countStyle: .memory))
+                            .font(.title3.bold())
+                        Text("Memory").font(.caption).foregroundStyle(.secondary)
+                        Text("\(snapshot.sample.processCount) processes").font(.caption)
                     }
-                    .accessibilityIdentifier("performance-shutdown-device")
-                    Spacer()
-                    Text("\(snapshot.sample.processCount) processes")
+                    PerformanceHistoryView(samples: model.samples(for: snapshot.sample.deviceID))
                 }
                 ProcessTableView(processes: model.processes)
+                    .frame(minHeight: 160)
             } else {
                 ContentUnavailableView(
                     "No booted devices",
                     systemImage: "gauge",
                     description: Text("Boot a simulator to see CPU and memory samples.")
                 )
+                .accessibilityIdentifier("performance-empty")
             }
         }
         .padding(16)
@@ -8207,91 +8203,6 @@ public struct PerformanceTabView: View {
         .task { model.start() }
         .onDisappear { model.stop() }
         .accessibilityIdentifier("performance-tab")
-    }
-}
-```
-
-Create `App/Sources/OpenSimApp/Performance/PerformanceDeviceCard.swift`:
-
-```swift
-import SwiftUI
-import OpenSimCore
-
-public struct PerformanceDeviceCard: View {
-    public let snapshot: DeviceMetricsSnapshot
-    public let samples: [MetricSample]
-    public let selected: Bool
-
-    public init(snapshot: DeviceMetricsSnapshot, samples: [MetricSample], selected: Bool) {
-        self.snapshot = snapshot
-        self.samples = samples
-        self.selected = selected
-    }
-
-    public var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(snapshot.sample.deviceID.rawValue)
-                .font(.caption.monospaced())
-                .lineLimit(1)
-            HStack {
-                VStack(alignment: .leading) {
-                    Text("\(snapshot.sample.cpuPercent, specifier: "%.1f")%")
-                        .font(.title2.bold())
-                        .accessibilityIdentifier("performance-cpu-value")
-                    Text("CPU")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                VStack(alignment: .trailing) {
-                    Text(ByteCountFormatter.string(fromByteCount: Int64(snapshot.sample.memoryBytes), countStyle: .memory))
-                        .font(.title3.bold())
-                        .accessibilityIdentifier("performance-memory-value")
-                    Text("RAM")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            MetricSparklineView(samples: samples)
-                .frame(height: 36)
-        }
-        .padding(12)
-        .background(selected ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(selected ? Color.accentColor : Color.clear, lineWidth: 1)
-        )
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("performance-device-card")
-    }
-}
-```
-
-Create `App/Sources/OpenSimApp/Performance/MetricSparklineView.swift`:
-
-```swift
-import Charts
-import SwiftUI
-import OpenSimCore
-
-public struct MetricSparklineView: View {
-    public let samples: [MetricSample]
-
-    public init(samples: [MetricSample]) {
-        self.samples = samples
-    }
-
-    public var body: some View {
-        Chart(samples, id: \.timestamp) { sample in
-            LineMark(
-                x: .value("Time", sample.timestamp),
-                y: .value("CPU", sample.cpuPercent)
-            )
-            .interpolationMethod(.catmullRom)
-        }
-        .chartXAxis(.hidden)
-        .chartYAxis(.hidden)
     }
 }
 ```
@@ -8310,13 +8221,16 @@ public struct ProcessTableView: View {
     }
 
     public var body: some View {
-        Table(processes, id: \.pid) {
-            TableColumn("PID") { Text(String($0.pid)).monospacedDigit() }
-            TableColumn("Name") { Text($0.name) }
-            TableColumn("CPU%") { Text(String(format: "%.1f", $0.cpuPercent)).monospacedDigit() }
-            TableColumn("Memory") {
-                Text(ByteCountFormatter.string(fromByteCount: Int64($0.memoryBytes), countStyle: .memory))
-            }
+        Table(processes) {
+            TableColumn("Process") { process in Text(process.name).lineLimit(1) }
+            TableColumn("PID") { process in Text("\(process.pid)").monospacedDigit() }.width(70)
+            TableColumn("CPU") { process in
+                Text("\(process.cpuPercent, specifier: "%.1f")%").monospacedDigit()
+            }.width(80)
+            TableColumn("Memory") { process in
+                Text(ByteCountFormatter.string(fromByteCount: Int64(process.memoryBytes), countStyle: .memory))
+                    .monospacedDigit()
+            }.width(100)
         }
         .accessibilityIdentifier("performance-process-table")
     }
@@ -8339,21 +8253,18 @@ public struct PerformanceThresholdBanner: View {
     public var body: some View {
         if !warnings.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(warnings, id: \.message) { warning in
-                    Label(warning.message, systemImage: "exclamationmark.triangle.fill")
+                ForEach(Array(warnings.enumerated()), id: \.offset) { _, warning in
+                    Label(warning.kind.rawValue, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.orange)
                 }
             }
-            .padding(10)
-            .background(Color.orange.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .accessibilityIdentifier("performance-threshold-banner")
+            .accessibilityIdentifier("performance-warning")
         }
     }
 }
 ```
 
-Sửa `AppShell.swift` để dùng `PerformanceTabView(model: performanceModel)` trong case `.performance`.
+`PerformanceThresholdBanner` giữ native `Label` cho từng warning, không card; `ProcessTableView` dùng `Table` process, identifier `performance-process-table`. Không có terminate/shutdown trong tab này; hai action đó thuộc device inspector và daemon lease/audit.
 
 - [ ] **Step 5: Nối client**
 
@@ -8373,29 +8284,22 @@ extension DaemonClient: PerformanceAPIClient {
         try await get(path: "/v1/perf/devices/\(deviceID.rawValue)/processes", as: [ProcessSample].self)
     }
 
-    func terminateApp(deviceID: DeviceID, bundleID: String) async throws {
-        _ = try await post(
-            path: "/v1/perf/devices/\(deviceID.rawValue)/actions",
-            body: MetricsActionRequest(action: .terminateApp, bundleID: bundleID),
-            as: EmptyPayload.self
-        )
-    }
-
-    func shutdownDevice(deviceID: DeviceID) async throws {
-        _ = try await post(
-            path: "/v1/perf/devices/\(deviceID.rawValue)/actions",
-            body: MetricsActionRequest(action: .shutdown, bundleID: nil),
-            as: EmptyPayload.self
-        )
-    }
-
     func metricsStream() -> AsyncStream<[DeviceMetricsSnapshot]> {
-        sseStream(event: "metrics.sample", as: [DeviceMetricsSnapshot].self)
+        AsyncStream { continuation in
+            Task {
+                for await event in events(lastEventID: nil) where event.type == .metricsSample {
+                    if let snapshots = try? event.data.decoded([DeviceMetricsSnapshot].self) {
+                        continuation.yield(snapshots)
+                    }
+                }
+                continuation.finish()
+            }
+        }
     }
 }
 ```
 
-`metricsStream` dùng SSE helper có sẵn của Plan 3/4; nếu tên khác, chỉ đổi phần thân.
+`events(lastEventID:)` là API Plan 4; controller/metrics chỉ đọc, không có write action.
 
 - [ ] **Step 6: Chạy UI test để thấy pass**
 
@@ -8453,11 +8357,24 @@ final class StorageServiceTests: XCTestCase {
 
     private actor MutableMetadata: StorageMetadataProviding {
         var booted: Set<DeviceID>
+        var failBooted = false
         init(booted: Set<DeviceID>) { self.booted = booted }
         func setBooted(_ ids: Set<DeviceID>) { booted = ids }
+        func setFailBooted(_ value: Bool) { failBooted = value }
         func simulatorDevices() async throws -> [SimulatorStorageRecord] { [] }
         func runtimes() async throws -> [RuntimeStorageRecord] { [] }
-        func bootedDeviceIDs() async throws -> Set<DeviceID> { booted }
+        func bootedDeviceIDs() async throws -> Set<DeviceID> {
+            if failBooted {
+                throw OpenSimError(
+                    code: "simctl_failed",
+                    message: "inventory unavailable",
+                    details: [:],
+                    recovery: "Retry",
+                    retryable: true
+                )
+            }
+            return booted
+        }
         func apps(on device: DeviceID) async throws -> [AppInfo] { [] }
         func appContainerPath(on device: DeviceID, bundleID: String, kind: ContainerKind) async throws -> String {
             "/tmp/container"
@@ -8557,6 +8474,47 @@ final class StorageServiceTests: XCTestCase {
             XCTFail("Apply must block a device that became booted")
         } catch let error as OpenSimError {
             XCTAssertEqual(error.code, "storage_in_use")
+        }
+    }
+
+    func testPlanAndApplyFailClosedWhenInventoryFails() async throws {
+        let (result, _, _) = try fixture()
+        let metadata = MutableMetadata(booted: [])
+        let service = StorageService(
+            scanner: FakeScanner(result: result),
+            plans: CleanPlanStore(),
+            executor: CleanExecutor(trash: NoopTrash(), simctl: NoopSimctl(), audit: { _ in }),
+            metadata: metadata,
+            fileSystem: FileManagerStorage(),
+            emit: { _, _ in },
+            now: { Date(timeIntervalSince1970: 1_790_000_000) },
+            makeID: { "scan-service" }
+        )
+        await service.storeForTesting(result)
+
+        await metadata.setFailBooted(true)
+        do {
+            _ = try await service.planDetail(scanID: "scan-service", itemIDs: ["device-item"])
+            XCTFail("Plan must fail closed when inventory fails")
+        } catch let error as OpenSimError {
+            XCTAssertEqual(error.code, "storage_scan_failed")
+        }
+
+        await metadata.setFailBooted(false)
+        let plan = try await service.planDetail(scanID: "scan-service", itemIDs: ["device-item"])
+        await metadata.setFailBooted(true)
+        do {
+            _ = try await service.applyClean(
+                planToken: plan.plan.token,
+                itemIDs: ["device-item"],
+                confirmationPhrase: nil,
+                actor: "test",
+                sessionID: nil,
+                leaseID: nil
+            )
+            XCTFail("Apply must fail closed when inventory fails")
+        } catch let error as OpenSimError {
+            XCTAssertEqual(error.code, "storage_scan_failed")
         }
     }
 }
@@ -8801,15 +8759,16 @@ git commit -m "test(storage): add in-use blocking and integration coverage"
 |---|---|---|
 | 5.1 | `OpenSimCore` giữ storage rules, metrics aggregation; daemon giữ I/O | 1, 5, 12, 13 |
 | 5.5 Storage scan | Scan nền, `scanId`, SSE progress, size/lastUsed/category/safety | 5, 6, 9 |
-| 5.5 Metrics | Sample 1 giây, SSE khi tab mở, snapshot/ring 10 phút | 13, 16 |
+| 5.5 Metrics | Sample 1 giây khi Performance bật/có subscriber, SSE khi view mở, snapshot/ring 10 phút | 13, 16 |
 | 6 | `StorageItem`, `MetricSample`, `AuditEvent` dùng đúng contract | 1, 9, 13 |
 | 7.2 | `storage scan/list/clean/reveal`, `perf top/watch/stats` | 10, 14 |
 | 7.1 | Envelope, `--json`, exit code qua Plan 1 | 10, 14 |
 | 8.2 | `storage_scan`, `storage_list`, `storage_clean`, `perf_devices`, `perf_processes` | 10, 11, 14 |
 | 8.3 | `storage_scan_failed`, `storage_in_use`, `confirmation_required`, `permission_denied` | 7, 8, 9 |
-| 9.1 Storage tab | Biểu đồ, danh sách, chọn, preview thu hồi | 15 |
-| 9.1 Performance tab | Card CPU/RAM, sparkline, process table, cảnh báo | 16 |
-| 9.3 | Sheet xác nhận, cảnh báo item đang dùng, không mock data | 15, 16 |
+| 9.1 Storage tab | `Table` native, summary, footer CTA, clean sheet; không chart/card | 15 |
+| 9.1 Performance tab | `Table` device, `Gauge`/`Chart` native, process table, cảnh báo; flag bật ở Plan 5 | 16 |
+| 9.3 | Native components, sheet xác nhận, cảnh báo item đang dùng, không mock data | 15, 16 |
+| 9.7 | Performance flag false ở Plan 4, bật ở Plan 5 | 16 |
 | 10.1 | Device, cache, log, runtime, DerivedData, Archives, app container | 5, 6 |
 | 10.2 | Allocated size, approximate, symlink, inaccessible, index cache, metadata | 2, 4, 5, 6 |
 | 10.3 | Plan/apply, token 5 phút một lần, chặn in-use, Trash, simctl, audit, >20 GB | 7, 8, 9, 17 |
@@ -8820,7 +8779,7 @@ git commit -m "test(storage): add in-use blocking and integration coverage"
 | 14.2 | Scan fixture, size tolerance, plan/apply, in-use, metrics booted, CLI golden, MCP contract | 2, 5, 6, 10, 11, 14, 17 |
 | 14.3 | UI Storage/Performance với dữ liệu thật | 15, 16 |
 | 17.1 mục 10 | Storage scan báo size; clean plan/apply; chặn in-use | 5, 9, 17 |
-| 17.1 mục 11 | Performance hiển thị CPU/RAM; ngưỡng cảnh báo | 13, 16 |
+| 17.1 mục 11 | Performance (khi flag bật) hiển thị CPU/RAM; ngưỡng cảnh báo | 13, 16 |
 | 17.2 | Scan 100 GB ≤ 60 giây; size lệch ≤ 5% | 2, 17 (đo thủ công) |
 
 ## Exit criteria
@@ -8829,13 +8788,15 @@ git commit -m "test(storage): add in-use blocking and integration coverage"
 - Scan fixture trả đúng category, allocated size lệch ≤ 5% so với `totalFileAllocatedSize`, `approximate` true khi có clone/inaccessible.
 - `storage_clean` dry run trả token TTL 300 giây; apply lần hai trả `confirmation_required`; token hết hạn bị từ chối.
 - Device booted, cache khi có device booted, runtime đang dùng và runtime hệ thống bị chặn với reason tương ứng; plan và apply đều chặn.
+- Inventory `bootedDeviceIDs()` throw thì scan/plan/apply trả `storage_scan_failed`; không item nào bị đánh dấu safe hoặc bị xoá (test `testPlanAndApplyFailClosedWhenInventoryFails`).
 - Apply > 20 GB không có `confirmationPhrase` trả `confirmation_required`; gõ đúng `ARCHIVES`/`DERIVEDDATA`/`MULTIPLE` thì chạy.
 - Xcode artifact đi qua `FileManager.trashItem`; simulator đi qua `simctl delete`; app data đi qua `simctl uninstall`; runtime đi qua `simctl runtime delete`.
 - Mỗi lần plan, apply và item thất bại có `AuditEvent` với actor, target, result, durationMs.
 - `GET /v1/storage/scans/{id}` và SSE `storage.scan.progress` hoạt động khi scan chạy; `GET /v1/perf/devices` trả sample 1 giây; ring giữ 600 sample/device.
 - Process mapping tìm được `launchd_sim` theo argv UDID; process con map theo cây; env fallback; process không map vào `unknown`.
 - Ngưỡng CPU 150% trong 30 giây, RAM 2 GB, disk free 10 GB sinh `MetricsWarning` đúng một lần cho mỗi lần vượt.
-- Tab Storage và Performance dùng daemon thật, không mock; UI test chạy với fixture root trong thư mục tạm.
+- Tab Storage dùng `Table`/`Form` native và daemon thật, không mock; UI test chạy với fixture root trong thư mục tạm.
+- Performance ẩn khi `AppFeature.performance=false`; Plan 5 bật flag sau khi nối metrics; UI test không còn card/sparkline tự chế.
 - CLI JSON golden cho `storage scan` và `perf top` khớp; MCP tool schema và gate destructive khớp spec 8.2.
 - Đo thủ công trên máy owner: scan 100 GB cache nguội ≤ 60 giây; ghi số thật vào báo cáo Plan 5. Nếu vượt, mở issue tối ưu và không tuyên bố đạt.
 - Không có thay đổi nào ngoài phạm vi spec 10 và 11; visionOS, thiết bị thật, debugger vẫn ngoài phạm vi.

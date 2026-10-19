@@ -2210,9 +2210,8 @@ final class VisionOSIntegrationTests: XCTestCase {
         let deviceType = try firstVisionDeviceType()
         let runtime = try visionRuntimeIdentifier()
         let created = try runJSON([
-            "device", "create",
-            "--name", "OpenSim Vision Integration",
-            "--device-type", deviceType,
+            "device", "create", "OpenSim Vision Integration",
+            "--type", deviceType,
             "--runtime", runtime,
             "--json"
         ])
@@ -2220,7 +2219,7 @@ final class VisionOSIntegrationTests: XCTestCase {
         let udid = try XCTUnwrap(data["id"] as? String)
 
         defer { cleanup(udid: udid) }
-        _ = try run(["device", "boot", udid, "--wait", "--json"])
+        _ = try run(["device", "boot", "--device", udid, "--wait", "--json"])
         _ = try run(["app", "install", fixture.path, "--device", udid, "--json"])
         _ = try run(["app", "launch", "dev.opensim.fixture.vision", "--device", udid, "--json"])
 
@@ -2301,8 +2300,8 @@ final class VisionOSIntegrationTests: XCTestCase {
 
     private func cleanup(udid: String) {
         _ = try? run(["app", "terminate", "dev.opensim.fixture.vision", "--device", udid, "--json"])
-        _ = try? run(["device", "shutdown", udid, "--json"])
-        _ = try? run(["device", "delete", udid, "--yes", "--json"])
+        _ = try? run(["device", "shutdown", "--device", udid, "--json"])
+        _ = try? run(["device", "delete", "--device", udid, "--yes", "--json"])
     }
 
     @discardableResult
@@ -2494,7 +2493,7 @@ Không có script, daemon, CI, hay app nào tự chạy lệnh tải. `Scripts/v
   `VISION_TYPE="$(xcrun simctl list devicetypes -j | jq -r '[.devicetypes[] | select(.name | startswith("Apple Vision Pro"))][0].identifier')"`
   `VISION_RUNTIME="$(xcrun simctl list runtimes -j | jq -r '[.runtimes[] | select(.identifier | contains("visionOS"))][0].identifier')"`
 - Tạo device:
-  `opensim device create --name "Vision Test" --device-type "$VISION_TYPE" --runtime "$VISION_RUNTIME" --json`
+  `opensim device create "Vision Test" --type "$VISION_TYPE" --runtime "$VISION_RUNTIME" --json`
 - Boot:
   `opensim device boot "Vision Test" --wait`
 
