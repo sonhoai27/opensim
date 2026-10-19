@@ -1,0 +1,1392 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenSim UI Prototype</title>
+<style>
+  :root {
+    --sim-image: url("__SIM_DATA_URI__");
+    --bg: #dfe2e9;
+    --window: #f7f8fa;
+    --sidebar: #f1f2f5;
+    --content: #ffffff;
+    --text: #1d1d1f;
+    --muted: #6e6e73;
+    --faint: #8e8e93;
+    --line: rgba(0, 0, 0, 0.08);
+    --line-strong: rgba(0, 0, 0, 0.12);
+    --blue: #0a84ff;
+    --blue-soft: rgba(10, 132, 255, 0.1);
+    --green: #2fb45a;
+    --green-soft: rgba(47, 180, 90, 0.11);
+    --orange: #ff9f0a;
+    --orange-soft: rgba(255, 159, 10, 0.13);
+    --red: #ff453a;
+    --purple: #af52de;
+    --teal: #30b0c7;
+    --shadow: 0 30px 90px rgba(20, 23, 32, 0.24);
+    --radius: 15px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(1100px 700px at 12% 0%, rgba(255,255,255,0.9), transparent 60%),
+      radial-gradient(900px 700px at 92% 100%, rgba(208, 204, 224, 0.7), transparent 62%),
+      linear-gradient(145deg, #e7e9ef, #d8dbe3);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 10px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button { font: inherit; }
+  .proto-note {
+    position: fixed;
+    bottom: 10px;
+    left: 14px;
+    z-index: 80;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.7);
+    border: 1px solid rgba(255,255,255,0.85);
+    box-shadow: 0 4px 18px rgba(20, 23, 32, 0.08);
+    color: #5d6069;
+    font-size: 10.5px;
+    backdrop-filter: blur(12px);
+  }
+  .proto-note b { color: #272a31; font-weight: 650; }
+  .proto-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--orange); }
+
+  .app-window {
+    width: min(1280px, calc(100vw - 20px));
+    height: min(842px, calc(100vh - 20px));
+    min-height: 720px;
+    border-radius: var(--radius);
+    background: var(--window);
+    box-shadow: var(--shadow);
+    border: 1px solid rgba(255,255,255,0.78);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+
+  .titlebar {
+    flex: 0 0 52px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 15px;
+    background: rgba(248, 248, 250, 0.86);
+    backdrop-filter: blur(22px);
+    border-bottom: 1px solid var(--line);
+    position: relative;
+    z-index: 5;
+  }
+  .traffic { display: flex; gap: 8px; flex: 0 0 auto; }
+  .traffic i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+  .traffic i:nth-child(1) { background: #ff5f57; }
+  .traffic i:nth-child(2) { background: #febc2e; }
+  .traffic i:nth-child(3) { background: #28c840; }
+  .brand { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 650; letter-spacing: -0.1px; flex: 0 0 auto; }
+  .logo {
+    width: 25px; height: 25px; border-radius: 7px;
+    background: linear-gradient(145deg, #3d8bff, #1258d0);
+    display: grid; place-items: center; color: #fff;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 2px 6px rgba(18, 88, 208, 0.25);
+  }
+  .titlebar-center {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 11.5px;
+    min-width: 0;
+  }
+  .path-sep { color: #c2c4cb; }
+  .titlebar-actions { display: flex; align-items: center; gap: 7px; flex: 0 0 auto; }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 25px;
+    padding: 0 9px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 550;
+    color: var(--muted);
+    background: rgba(0,0,0,0.035);
+    border: 1px solid rgba(0,0,0,0.04);
+    white-space: nowrap;
+  }
+  .pill .dot { width: 6px; height: 6px; }
+  .pill.green { color: #1f7a3d; background: var(--green-soft); border-color: rgba(47,180,90,0.13); }
+  .pill.orange { color: #9a5b00; background: var(--orange-soft); border-color: rgba(255,159,10,0.16); }
+  .pill.blue { color: #0b5fb8; background: var(--blue-soft); border-color: rgba(10,132,255,0.13); }
+  .icon-btn {
+    width: 28px; height: 28px; border-radius: 7px; border: 0;
+    background: transparent; color: var(--muted);
+    display: grid; place-items: center; cursor: pointer;
+  }
+  .icon-btn:hover { background: rgba(0,0,0,0.05); color: var(--text); }
+  .shortcut-btn {
+    height: 27px; display: flex; align-items: center; gap: 7px;
+    border: 1px solid var(--line); background: rgba(255,255,255,0.65);
+    color: var(--muted); border-radius: 7px; padding: 0 9px; font-size: 10.5px;
+    cursor: pointer;
+  }
+  .shortcut-btn:hover { background: #fff; color: var(--text); }
+
+  .app-body { flex: 1; min-height: 0; display: flex; }
+
+  .sidebar {
+    width: 262px; flex: 0 0 262px;
+    background: var(--sidebar);
+    border-right: 1px solid var(--line);
+    display: flex; flex-direction: column;
+    padding: 11px 9px 10px;
+    min-height: 0;
+  }
+  .searchbox {
+    height: 30px; display: flex; align-items: center; gap: 7px;
+    padding: 0 9px; border-radius: 8px;
+    background: rgba(255,255,255,0.72);
+    border: 1px solid rgba(0,0,0,0.06);
+    color: var(--faint); font-size: 11px;
+  }
+  .searchbox input {
+    border: 0; background: transparent; outline: none; width: 100%;
+    font: inherit; color: var(--text); font-size: 11px;
+  }
+  .searchbox input::placeholder { color: var(--faint); }
+  .side-section {
+    display: flex; align-items: center; justify-content: space-between;
+    margin: 15px 8px 6px;
+    font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em;
+    color: #90939b; text-transform: uppercase;
+  }
+  .side-count { color: #a4a7ae; font-weight: 600; }
+  .device-row {
+    display: flex; align-items: center; gap: 9px;
+    padding: 7px 7px; border-radius: 8px;
+    cursor: pointer; user-select: none;
+  }
+  .device-row:hover { background: rgba(0,0,0,0.032); }
+  .device-row.selected { background: rgba(10,132,255,0.105); }
+  .device-icon {
+    width: 28px; height: 28px; flex: 0 0 28px;
+    border-radius: 7px; display: grid; place-items: center;
+    background: rgba(255,255,255,0.85); color: #5d6069;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  }
+  .device-row.selected .device-icon { color: var(--blue); }
+  .device-meta { flex: 1; min-width: 0; }
+  .device-name {
+    font-size: 11.5px; font-weight: 550; letter-spacing: -0.05px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .device-sub { display: flex; align-items: center; gap: 5px; margin-top: 1px; font-size: 9.5px; color: var(--faint); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: #a7a9b0; flex: 0 0 6px; }
+  .dot.green { background: var(--green); box-shadow: 0 0 0 3px rgba(47,180,90,0.10); }
+  .dot.orange { background: var(--orange); box-shadow: 0 0 0 3px rgba(255,159,10,0.12); }
+  .dot.gray { background: #b7bac1; }
+  .dot.purple { background: var(--purple); }
+  .mini-badge {
+    font-size: 8.5px; padding: 2px 5px; border-radius: 999px;
+    font-weight: 650; letter-spacing: 0.01em; white-space: nowrap;
+  }
+  .mini-badge.agent { color: #925500; background: #ffe9c7; }
+  .mini-badge.warn { color: #96620b; background: #fff0d4; }
+  .side-divider { height: 1px; background: var(--line); margin: 10px 8px; }
+  .sidebar-footer { margin-top: auto; display: flex; flex-direction: column; gap: 7px; }
+  .disk-card {
+    border-radius: 9px; background: rgba(255,255,255,0.62);
+    border: 1px solid rgba(0,0,0,0.05); padding: 9px 10px;
+  }
+  .disk-top { display: flex; justify-content: space-between; font-size: 9.5px; color: var(--muted); }
+  .disk-top b { color: var(--text); font-weight: 600; }
+  .disk-bar { height: 4px; border-radius: 999px; background: rgba(0,0,0,0.07); margin-top: 7px; overflow: hidden; }
+  .disk-bar span { display: block; height: 100%; width: 78%; background: linear-gradient(90deg, var(--blue), #66b3ff); border-radius: 999px; }
+  .side-action {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    height: 29px; border-radius: 7px; border: 1px solid rgba(0,0,0,0.07);
+    background: rgba(255,255,255,0.7); color: #3f424a; font-size: 10.5px;
+    font-weight: 550; cursor: pointer;
+  }
+  .side-action:hover { background: #fff; }
+  .side-link {
+    display: flex; align-items: center; gap: 7px; padding: 5px 8px;
+    color: var(--muted); font-size: 10.5px; cursor: pointer; border-radius: 6px;
+  }
+  .side-link:hover { background: rgba(0,0,0,0.03); color: var(--text); }
+
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--content); }
+  .main-header {
+    flex: 0 0 auto;
+    padding: 18px 22px 0;
+    border-bottom: 1px solid var(--line);
+    background: rgba(255,255,255,0.92);
+  }
+  .header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  h1 { margin: 0; font-size: 22px; font-weight: 680; letter-spacing: -0.45px; }
+  .subtitle { margin: 4px 0 0; font-size: 11.5px; color: var(--muted); letter-spacing: -0.05px; }
+  .header-actions { display: flex; align-items: center; gap: 7px; padding-top: 2px; }
+  .btn {
+    height: 29px; border-radius: 7px; border: 1px solid transparent;
+    padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    font-size: 10.5px; font-weight: 600; cursor: pointer;
+    background: #f0f1f4; color: #2e3138;
+  }
+  .btn:hover { filter: brightness(0.98); }
+  .btn.primary { background: var(--blue); color: #fff; box-shadow: 0 1px 2px rgba(10,132,255,0.2); }
+  .btn.primary:hover { background: #0077ed; }
+  .btn.ghost { background: transparent; color: var(--blue); border-color: var(--line); }
+  .btn.ghost:hover { background: var(--blue-soft); }
+  .btn.danger { background: #fff1f0; color: #c4322a; border-color: rgba(255,69,58,0.12); }
+  .btn.small { height: 25px; padding: 0 8px; font-size: 10px; }
+
+  .tabs { display: flex; gap: 2px; margin-top: 15px; align-items: flex-end; }
+  .tab {
+    position: relative; border: 0; background: transparent; cursor: pointer;
+    padding: 8px 11px 10px; font-size: 11.5px; font-weight: 550; color: var(--muted);
+    border-bottom: 2px solid transparent; letter-spacing: -0.05px;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--text); border-bottom-color: var(--blue); }
+  .tab .tab-count { color: #a0a3aa; font-size: 9.5px; margin-left: 4px; }
+
+  .view { display: none; flex: 1; min-height: 0; overflow: auto; padding: 17px 22px 22px; }
+  .view.active { display: block; }
+  #view-device.active { display: flex; padding: 0; overflow: hidden; }
+
+  .section-head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 9px; }
+  .section-title { font-size: 11px; font-weight: 650; color: #4a4d55; letter-spacing: 0.01em; }
+  .section-meta { font-size: 10px; color: var(--faint); }
+  .section-gap { margin-top: 16px; }
+
+  .device-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .device-card {
+    min-width: 0; border: 1px solid var(--line); border-radius: 11px;
+    background: #fff; padding: 10px 10px 9px; display: flex; flex-direction: column;
+    box-shadow: 0 1px 1px rgba(20,23,32,0.02);
+  }
+  .device-card.selected { border-color: rgba(10,132,255,0.55); box-shadow: 0 0 0 3px rgba(10,132,255,0.09); }
+  .card-preview {
+    height: 116px; border-radius: 8px; overflow: hidden;
+    background: linear-gradient(155deg, #eef2f8, #e4e7ee);
+    display: flex; align-items: flex-start; justify-content: center;
+    border: 1px solid rgba(0,0,0,0.035);
+  }
+  .phone-mini {
+    width: 58px; height: 124px; margin-top: 9px;
+    border-radius: 12px; padding: 3px; background: #0b0b0d;
+    box-shadow: 0 8px 18px rgba(20,23,32,0.18), inset 0 0 0 1px rgba(255,255,255,0.12);
+  }
+  .phone-mini .screen {
+    width: 100%; height: 100%; border-radius: 9px;
+    background-image: var(--sim-image); background-size: cover; background-position: top center;
+  }
+  .card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; margin-top: 9px; }
+  .card-name { font-size: 11.5px; font-weight: 620; letter-spacing: -0.1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-sub { font-size: 9.5px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-badges { display: flex; align-items: center; gap: 4px; margin-top: 7px; flex-wrap: wrap; }
+  .state-badge {
+    font-size: 8.5px; font-weight: 650; padding: 2px 6px; border-radius: 999px;
+    color: #20743d; background: var(--green-soft);
+  }
+  .state-badge.off { color: #777a82; background: #f2f3f5; }
+  .state-badge.warn { color: #96620b; background: #fff0d4; }
+  .agent-badge {
+    font-size: 8.5px; font-weight: 650; padding: 2px 6px; border-radius: 999px;
+    color: #925500; background: #ffe9c7;
+  }
+  .card-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 10px; }
+  .card-metric { font-size: 9.5px; color: var(--faint); }
+  .card-buttons { display: flex; gap: 5px; }
+  .tiny-btn {
+    height: 23px; border-radius: 6px; border: 1px solid var(--line);
+    background: #fff; color: #3f424a; font-size: 9.5px; font-weight: 600;
+    padding: 0 7px; cursor: pointer;
+  }
+  .tiny-btn:hover { background: #f7f8fa; }
+  .tiny-btn.blue { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .tiny-btn.blue:hover { background: #0077ed; }
+
+  .runtime-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+  .runtime-card {
+    border: 1px solid var(--line); border-radius: 9px; padding: 9px 10px;
+    display: flex; align-items: center; gap: 9px; background: #fff;
+  }
+  .runtime-icon {
+    width: 27px; height: 27px; border-radius: 7px; display: grid; place-items: center;
+    background: #f2f4f8; color: #5d6069; flex: 0 0 27px;
+  }
+  .runtime-meta { flex: 1; min-width: 0; }
+  .runtime-name { font-size: 10.5px; font-weight: 600; }
+  .runtime-sub { font-size: 9px; color: var(--faint); margin-top: 1px; }
+  .runtime-status { font-size: 8.5px; font-weight: 650; padding: 2px 6px; border-radius: 999px; }
+  .runtime-status.ok { color: #20743d; background: var(--green-soft); }
+  .runtime-status.miss { color: #96620b; background: #fff0d4; }
+
+  .agent-strip {
+    margin-top: 13px; display: flex; align-items: center; gap: 10px;
+    border: 1px solid rgba(255,159,10,0.2); background: linear-gradient(180deg, #fff9ee, #fff6e7);
+    border-radius: 10px; padding: 9px 11px;
+  }
+  .agent-avatar {
+    width: 26px; height: 26px; border-radius: 7px;
+    background: #262a33; color: #fff; display: grid; place-items: center;
+    font-size: 9px; font-weight: 700; flex: 0 0 26px;
+  }
+  .agent-copy { flex: 1; min-width: 0; }
+  .agent-title { font-size: 10.5px; font-weight: 620; color: #704300; }
+  .agent-sub { font-size: 9.5px; color: #94744a; margin-top: 1px; }
+  .agent-actions { display: flex; gap: 6px; }
+
+  #view-device { background: radial-gradient(900px 520px at 50% 0%, #2e3442, #171a21); }
+  .stage {
+    flex: 1; min-width: 0; position: relative;
+    display: flex; align-items: center; justify-content: center;
+    padding: 12px 18px;
+  }
+  .stage-grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 32px 32px;
+    mask-image: radial-gradient(600px 400px at 50% 45%, black, transparent 75%);
+    pointer-events: none;
+  }
+  .device-window {
+    width: 790px; height: 610px; border-radius: 13px; overflow: hidden;
+    background: #1f222b; border: 1px solid rgba(255,255,255,0.13);
+    box-shadow: 0 34px 90px rgba(0,0,0,0.46), 0 0 0 1px rgba(0,0,0,0.25);
+    display: flex; flex-direction: column; position: relative; z-index: 1;
+  }
+  .dw-titlebar {
+    height: 43px; flex: 0 0 43px; display: flex; align-items: center; gap: 9px;
+    padding: 0 12px; background: #2b2e38; color: #e9eaf0;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    font-size: 11px;
+  }
+  .dw-titlebar .traffic i { width: 11px; height: 11px; }
+  .dw-title { font-weight: 600; white-space: nowrap; }
+  .dw-title-meta { color: #9ca2b1; font-size: 10px; }
+  .dw-title-spacer { flex: 1; }
+  .dw-toolbar {
+    height: 43px; flex: 0 0 43px; display: flex; align-items: center; gap: 4px;
+    padding: 0 9px; background: #242730; color: #aeb5c4;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .tool {
+    width: 29px; height: 29px; border-radius: 7px; border: 0;
+    background: transparent; color: #aeb5c4; display: grid; place-items: center; cursor: pointer;
+  }
+  .tool:hover { background: rgba(255,255,255,0.08); color: #fff; }
+  .tool.active { background: rgba(10,132,255,0.2); color: #7dbdff; }
+  .tool-sep { width: 1px; height: 20px; background: rgba(255,255,255,0.08); margin: 0 5px; }
+  .fit-control {
+    margin-left: auto; display: flex; align-items: center; gap: 2px;
+    height: 25px; border-radius: 6px; padding: 2px;
+    background: rgba(255,255,255,0.055); font-size: 9.5px;
+  }
+  .fit-control button {
+    height: 21px; padding: 0 8px; border: 0; border-radius: 4px;
+    background: transparent; color: #9ca2b1; font-size: 9.5px; cursor: pointer;
+  }
+  .fit-control button.active { background: rgba(255,255,255,0.13); color: #fff; }
+  .dw-body { flex: 1; min-height: 0; display: flex; }
+  .dw-stage {
+    flex: 1; min-width: 0; position: relative; overflow: hidden;
+    background: radial-gradient(460px 460px at 50% 46%, #2e3340, #1a1d25);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .phone {
+    width: 236px; height: 512px; border-radius: 36px; padding: 7px;
+    background: #08090b; position: relative;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.08);
+  }
+  .phone .screen {
+    width: 100%; height: 100%; border-radius: 30px;
+    background-image: var(--sim-image); background-size: cover; background-position: top center;
+  }
+  .phone .island {
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    width: 66px; height: 19px; border-radius: 11px; background: #050506;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+  }
+  .agent-banner {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    width: 218px; display: flex; align-items: center; gap: 6px;
+    padding: 6px 7px; border-radius: 8px;
+    background: rgba(28, 24, 14, 0.82); border: 1px solid rgba(255,159,10,0.35);
+    color: #ffd28a; font-size: 8px; backdrop-filter: blur(10px);
+    z-index: 3;
+  }
+  .agent-banner .agent-avatar { width: 18px; height: 18px; flex: 0 0 18px; font-size: 6.5px; background: #ff9f0a; color: #3a2500; border-radius: 5px; }
+  .agent-banner .banner-copy { flex: 1; line-height: 1.25; }
+  .agent-banner .banner-copy b { color: #ffe1b0; font-weight: 650; }
+  .banner-btn {
+    border: 0; border-radius: 5px; padding: 3px 6px; font-size: 8px; font-weight: 700;
+    color: #5c3a00; background: #ffcf7a; cursor: pointer; white-space: nowrap;
+  }
+  .gesture-hint {
+    position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 7px; padding: 5px 9px;
+    border-radius: 999px; background: rgba(10,12,17,0.55); border: 1px solid rgba(255,255,255,0.1);
+    color: #c5cbd7; font-size: 8.5px; white-space: nowrap; backdrop-filter: blur(8px);
+  }
+  .kbd {
+    display: inline-grid; place-items: center; min-width: 15px; height: 15px;
+    padding: 0 3px; border-radius: 4px; background: rgba(255,255,255,0.11);
+    border: 1px solid rgba(255,255,255,0.09); color: #d5dae3;
+    font-size: 8px; font-weight: 600;
+  }
+  .dw-inspector {
+    width: 246px; flex: 0 0 246px; background: #242730;
+    border-left: 1px solid rgba(255,255,255,0.07);
+    padding: 13px 12px; color: #e6e8ee; overflow: auto;
+  }
+  .inspector-label { font-size: 8.5px; font-weight: 700; letter-spacing: 0.09em; color: #858c9c; text-transform: uppercase; }
+  .inspector-card {
+    margin-top: 7px; background: rgba(255,255,255,0.035);
+    border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; padding: 9px;
+  }
+  .inspector-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 10px; padding: 3px 0; }
+  .inspector-row span { color: #9299a8; }
+  .inspector-row b { color: #e9ebf1; font-weight: 600; }
+  .inspector-actions { display: flex; gap: 5px; margin-top: 9px; }
+  .dark-btn {
+    height: 25px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.11);
+    background: rgba(255,255,255,0.06); color: #dce0e8;
+    font-size: 9.5px; font-weight: 600; padding: 0 8px; cursor: pointer;
+  }
+  .dark-btn:hover { background: rgba(255,255,255,0.1); }
+  .dark-btn.orange { background: #ff9f0a; border-color: #ff9f0a; color: #3b2600; }
+  .dark-btn.orange:hover { background: #ffad2e; }
+  .dark-btn.blue { background: rgba(10,132,255,0.22); border-color: rgba(10,132,255,0.3); color: #8ac4ff; }
+  .dark-list { margin-top: 5px; display: flex; flex-direction: column; gap: 6px; }
+  .dark-list-item { display: flex; align-items: center; gap: 6px; font-size: 9.5px; color: #aab1bf; }
+  .dark-list-item b { color: #e4e7ed; font-weight: 550; }
+  .dark-list-item .dot { width: 5px; height: 5px; flex: 0 0 5px; }
+  .inspector-note { font-size: 9px; color: #858c9c; line-height: 1.45; margin-top: 7px; }
+
+  .stats-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
+  .stat-card { border: 1px solid var(--line); border-radius: 9px; padding: 10px 11px; background: #fff; }
+  .stat-label { font-size: 9.5px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+  .stat-value { font-size: 18px; font-weight: 680; letter-spacing: -0.4px; margin-top: 5px; }
+  .stat-sub { font-size: 9px; color: var(--faint); margin-top: 2px; }
+  .storage-bar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: #eef0f4; margin: 12px 0 7px; }
+  .storage-bar span { height: 100%; }
+  .storage-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 9px; color: var(--muted); }
+  .legend-item { display: inline-flex; align-items: center; gap: 4px; }
+  .legend-swatch { width: 6px; height: 6px; border-radius: 2px; }
+  .sample-note {
+    display: flex; align-items: center; gap: 6px;
+    border: 1px solid rgba(10,132,255,0.12); background: rgba(10,132,255,0.045);
+    color: #3f6c9f; border-radius: 7px; padding: 6px 9px; font-size: 9.5px; margin-bottom: 10px;
+  }
+  .storage-layout { display: grid; grid-template-columns: 172px minmax(0,1fr) 236px; gap: 11px; margin-top: 13px; }
+  .category-list { border: 1px solid var(--line); border-radius: 9px; padding: 5px; background: #fbfbfd; align-self: start; }
+  .category-row { display: flex; align-items: center; gap: 7px; padding: 6px 7px; border-radius: 6px; font-size: 10px; color: #565961; cursor: pointer; }
+  .category-row:hover { background: rgba(0,0,0,0.03); }
+  .category-row.active { background: var(--blue-soft); color: #0b5fb8; font-weight: 600; }
+  .category-row .cat-size { margin-left: auto; font-size: 9px; color: var(--faint); }
+  .table-wrap { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: #fff; min-width: 0; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 8.5px; font-weight: 650; color: var(--faint); text-transform: uppercase; letter-spacing: 0.06em; padding: 8px 9px; border-bottom: 1px solid var(--line); background: #fcfcfd; }
+  td { padding: 8px 9px; border-bottom: 1px solid var(--line); font-size: 10px; vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  tr.selected td { background: rgba(10,132,255,0.045); }
+  tr:hover td { background: rgba(0,0,0,0.018); }
+  .check { width: 12px; height: 12px; border: 1px solid #c6c9cf; border-radius: 3px; display: inline-block; background: #fff; }
+  .check.on { background: var(--blue); border-color: var(--blue); position: relative; }
+  .check.on::after { content: ""; position: absolute; left: 3px; top: 1px; width: 4px; height: 7px; border: solid #fff; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
+  .cell-name { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .cell-icon { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; background: #f2f4f8; color: #5d6069; flex: 0 0 22px; }
+  .cell-title { font-size: 10px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cell-sub { font-size: 8.5px; color: var(--faint); margin-top: 1px; }
+  .size-cell { display: flex; align-items: center; gap: 7px; }
+  .size-bar { width: 54px; height: 4px; border-radius: 999px; background: #eef0f4; overflow: hidden; flex: 0 0 54px; }
+  .size-bar span { display: block; height: 100%; border-radius: 999px; background: var(--blue); }
+  .size-num { font-size: 9.5px; color: #4f525a; white-space: nowrap; }
+  .safety { font-size: 8.5px; font-weight: 650; padding: 2px 5px; border-radius: 999px; white-space: nowrap; }
+  .safety.safe { color: #1f7a3d; background: var(--green-soft); }
+  .safety.inuse { color: #96620b; background: #fff0d4; }
+  .safety.protected { color: #5f6675; background: #f1f2f5; }
+  .detail-panel { border: 1px solid var(--line); border-radius: 9px; background: #fbfbfd; padding: 11px; align-self: start; }
+  .detail-icon { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: #fff; border: 1px solid var(--line); color: #5d6069; }
+  .detail-title { font-size: 12px; font-weight: 650; margin-top: 8px; }
+  .detail-sub { font-size: 9.5px; color: var(--muted); margin-top: 2px; }
+  .detail-kv { display: flex; justify-content: space-between; font-size: 9.5px; color: var(--muted); padding: 4px 0; border-bottom: 1px solid var(--line); }
+  .detail-kv:last-of-type { border-bottom: 0; }
+  .detail-kv b { color: var(--text); font-weight: 600; }
+  .detail-note { font-size: 9px; line-height: 1.45; color: #8a6b3c; background: #fff8eb; border: 1px solid #ffe4b8; border-radius: 6px; padding: 7px; margin-top: 8px; }
+  .detail-actions { display: flex; flex-direction: column; gap: 5px; margin-top: 9px; }
+
+  .perf-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+  .perf-card { border: 1px solid var(--line); border-radius: 10px; padding: 11px; background: #fff; }
+  .perf-head { display: flex; align-items: center; gap: 8px; }
+  .perf-name { font-size: 11.5px; font-weight: 620; }
+  .perf-sub { font-size: 9px; color: var(--faint); margin-top: 1px; }
+  .perf-head .state-badge { margin-left: auto; }
+  .perf-numbers { display: flex; gap: 18px; margin-top: 10px; }
+  .perf-number .n { font-size: 17px; font-weight: 680; letter-spacing: -0.4px; }
+  .perf-number .l { font-size: 8.5px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 1px; }
+  .sparkline { width: 100%; height: 46px; margin-top: 6px; }
+  .perf-actions { display: flex; gap: 5px; margin-top: 8px; }
+  .alert-row {
+    display: flex; align-items: center; gap: 8px; margin-top: 11px;
+    border: 1px solid rgba(255,159,10,0.2); background: #fff8eb; border-radius: 8px; padding: 8px 10px;
+    color: #855400; font-size: 10px;
+  }
+  .alert-row .icon { color: #d98600; }
+  .alert-row .spacer { flex: 1; }
+  .process-table { margin-top: 6px; }
+  .process-table td { padding: 7px 9px; }
+
+  .activity-layout { display: grid; grid-template-columns: minmax(0,1fr) 270px; gap: 13px; }
+  .activity-card { border: 1px solid var(--line); border-radius: 9px; background: #fff; overflow: hidden; }
+  .activity-head { display: flex; align-items: center; gap: 7px; padding: 9px 11px; border-bottom: 1px solid var(--line); }
+  .activity-title { font-size: 10.5px; font-weight: 650; }
+  .activity-filters { display: flex; gap: 4px; margin-left: auto; }
+  .filter-btn { border: 1px solid transparent; background: transparent; color: var(--muted); font-size: 9px; padding: 3px 6px; border-radius: 5px; cursor: pointer; }
+  .filter-btn.active { background: var(--blue-soft); color: #0b5fb8; border-color: rgba(10,132,255,0.1); }
+  .feed { padding: 2px 11px 5px; }
+  .feed-item { display: flex; gap: 9px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .feed-item:last-child { border-bottom: 0; }
+  .feed-time { width: 48px; flex: 0 0 48px; font-size: 8.5px; color: var(--faint); font-variant-numeric: tabular-nums; padding-top: 2px; }
+  .feed-icon { width: 25px; height: 25px; flex: 0 0 25px; border-radius: 7px; display: grid; place-items: center; background: #eef5ff; color: var(--blue); }
+  .feed-icon.orange { background: #fff2dd; color: #d98600; }
+  .feed-icon.gray { background: #f2f3f5; color: #777b84; }
+  .feed-body { flex: 1; min-width: 0; }
+  .feed-title { font-size: 10.5px; font-weight: 550; line-height: 1.3; }
+  .feed-title b { font-weight: 650; }
+  .feed-sub { font-size: 9px; color: var(--muted); margin-top: 2px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .tag { font-size: 8px; font-weight: 650; padding: 1px 5px; border-radius: 4px; background: #f0f1f4; color: #6b6f78; }
+  .tag.mcp { color: #0b5fb8; background: #e9f3ff; }
+  .tag.cli { color: #5b4a86; background: #f1edfb; }
+  .tag.human { color: #1f7a3d; background: #eaf7ee; }
+  .session-card { border: 1px solid var(--line); border-radius: 9px; background: #fbfbfd; padding: 11px; }
+  .session-top { display: flex; align-items: center; gap: 8px; }
+  .session-avatar { width: 30px; height: 30px; border-radius: 8px; background: #262a33; color: #fff; display: grid; place-items: center; font-size: 9px; font-weight: 700; }
+  .session-name { font-size: 11px; font-weight: 650; }
+  .session-sub { font-size: 9px; color: var(--faint); margin-top: 1px; }
+  .session-kv { display: flex; justify-content: space-between; font-size: 9.5px; color: var(--muted); padding: 4px 0; border-bottom: 1px solid var(--line); }
+  .session-kv:last-of-type { border-bottom: 0; }
+  .session-kv b { color: var(--text); font-weight: 600; }
+  .lease-meter { height: 4px; border-radius: 999px; background: #eef0f4; margin: 7px 0 3px; overflow: hidden; }
+  .lease-meter span { display: block; height: 100%; width: 74%; background: var(--orange); border-radius: 999px; }
+  .session-actions { display: flex; flex-direction: column; gap: 5px; margin-top: 9px; }
+  .takeover-note { font-size: 9px; line-height: 1.45; color: #8a6b3c; background: #fff8eb; border: 1px solid #ffe4b8; border-radius: 6px; padding: 7px; margin-top: 8px; }
+
+  .mode-switch {
+    display: flex; align-items: center; gap: 2px; height: 27px;
+    border: 1px solid var(--line); border-radius: 7px; padding: 2px; background: #fbfbfd;
+  }
+  .mode-switch .mode-label { font-size: 9px; color: var(--faint); padding: 0 5px; white-space: nowrap; }
+  .mode-switch button {
+    height: 21px; padding: 0 7px; border: 0; border-radius: 5px;
+    background: transparent; color: var(--muted); font-size: 9.5px; font-weight: 600; cursor: pointer;
+  }
+  .mode-switch button.active { background: var(--blue-soft); color: #0b5fb8; }
+
+  .device-window-overlay {
+    position: fixed; inset: 0; z-index: 55; display: none;
+    align-items: center; justify-content: center;
+    background: rgba(15, 17, 24, 0.34); backdrop-filter: blur(7px);
+  }
+  .device-window-overlay.open { display: flex; }
+  .floating-device-window {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: min(860px, calc(100vw - 40px));
+    height: min(700px, calc(100vh - 40px));
+    background: #1f222b; border-radius: 13px; overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.14);
+    box-shadow: 0 40px 110px rgba(0,0,0,0.52);
+    display: flex; flex-direction: column;
+  }
+  .floating-device-window .dw-titlebar { cursor: grab; }
+  .floating-device-window .dw-titlebar:active { cursor: grabbing; }
+  .floating-phone { width: 258px; height: 560px; border-radius: 40px; padding: 8px; }
+  .floating-phone .screen { border-radius: 34px; }
+  .floating-phone .island { width: 72px; height: 21px; top: 15px; }
+  .floating-statusbar {
+    flex: 0 0 32px; display: flex; align-items: center; gap: 7px;
+    padding: 0 12px; background: #242730; border-top: 1px solid rgba(255,255,255,0.07);
+    color: #aeb5c4; font-size: 9.5px;
+  }
+  .floating-statusbar b { color: #e9ebf1; }
+  .floating-statusbar .spacer { flex: 1; }
+  .floating-close {
+    margin-left: 6px; width: 26px; height: 26px; border: 0; border-radius: 6px;
+    background: transparent; color: #9ca2b1; display: grid; place-items: center; cursor: pointer;
+  }
+  .floating-close:hover { background: rgba(255,255,255,0.08); color: #fff; }
+  .link-btn {
+    border: 0; background: transparent; color: #ffc46b;
+    font-size: 9.5px; font-weight: 650; padding: 0; cursor: pointer;
+  }
+
+  .palette-overlay {
+    position: fixed; inset: 0; z-index: 60; display: none;
+    align-items: flex-start; justify-content: center; padding-top: 104px;
+    background: rgba(15, 17, 24, 0.32); backdrop-filter: blur(7px);
+  }
+  .palette-overlay.open { display: flex; }
+  .palette {
+    width: 520px; border-radius: 13px; overflow: hidden;
+    background: rgba(250, 250, 252, 0.98);
+    border: 1px solid rgba(255,255,255,0.85);
+    box-shadow: 0 30px 90px rgba(10,12,18,0.34);
+  }
+  .palette-search { display: flex; align-items: center; gap: 8px; padding: 14px 15px; border-bottom: 1px solid var(--line); color: var(--faint); }
+  .palette-search input { flex: 1; border: 0; background: transparent; outline: none; font: inherit; font-size: 14px; color: var(--text); }
+  .palette-search input::placeholder { color: var(--faint); }
+  .palette-list { padding: 6px; max-height: 320px; overflow: auto; }
+  .palette-row { display: flex; align-items: center; gap: 9px; padding: 8px 9px; border-radius: 7px; cursor: pointer; }
+  .palette-row:hover, .palette-row.active { background: var(--blue-soft); }
+  .palette-row .device-icon { width: 26px; height: 26px; flex-basis: 26px; }
+  .palette-name { font-size: 11px; font-weight: 550; }
+  .palette-sub { font-size: 9px; color: var(--faint); margin-top: 1px; }
+  .palette-right { margin-left: auto; display: flex; align-items: center; gap: 5px; }
+  .palette-footer { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-top: 1px solid var(--line); font-size: 9px; color: var(--faint); }
+  .palette-footer .kbd { background: #f0f1f4; border-color: #e2e4e8; color: #6e727b; }
+  .palette-footer .spacer { flex: 1; }
+
+  .side-note { text-align: center; font-size: 8.5px; color: var(--faint); margin-top: 1px; }
+  .icon { width: 14px; height: 14px; display: inline-block; vertical-align: middle; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .icon.sm { width: 12px; height: 12px; }
+  .icon.lg { width: 16px; height: 16px; }
+  .icon.xs { width: 10px; height: 10px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+  @media (max-width: 1100px) {
+    body { padding: 10px; }
+    .app-window { width: calc(100vw - 20px); min-width: 0; }
+    .sidebar { width: 236px; flex-basis: 236px; }
+    .titlebar-center .pill { display: none; }
+    .titlebar-actions .pill.blue { display: none; }
+    .device-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .storage-layout { grid-template-columns: 160px minmax(0,1fr); }
+    .detail-panel { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"></circle><path d="M16 16l4 4"></path></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="3"></rect><path d="M10 5.2h4"></path><path d="M10.5 18.8h3"></path></symbol>
+  <symbol id="i-watch" viewBox="0 0 24 24"><rect x="7.5" y="6" width="9" height="12" rx="2.6"></rect><path d="M9.5 6V3.6h5V6M9.5 18v2.4h5V18"></path></symbol>
+  <symbol id="i-tv" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="2"></rect><path d="M8 21h8M12 17v4"></path></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5l10 6.5-10 6.5z"></path></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5"></rect></symbol>
+  <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 1-2.34-5.66"></path><path d="M20 4v7h-7"></path></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24"><rect x="3" y="6.5" width="18" height="13" rx="2.5"></rect><circle cx="12" cy="13" r="3.4"></circle><path d="M8.5 6.5l1.2-2h4.6l1.2 2"></path></symbol>
+  <symbol id="i-record" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"></circle></symbol>
+  <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="3" y="6.5" width="18" height="11" rx="2"></rect><path d="M6.5 10h.01M9.5 10h.01M12.5 10h.01M15.5 10h.01M18 10h.01M7 13.5h10"></path></symbol>
+  <symbol id="i-gesture" viewBox="0 0 24 24"><path d="M8.5 11V6.5a1.6 1.6 0 0 1 3.2 0V11"></path><path d="M11.7 10V5.2a1.6 1.6 0 0 1 3.2 0V11"></path><path d="M14.9 10.3V7.2a1.6 1.6 0 0 1 3.2 0v6.4a6 6 0 0 1-6 6h-.4a5 5 0 0 1-3.7-1.7l-3.4-3.8a1.7 1.7 0 0 1 2.5-2.3l1.4 1.5"></path></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.1a1.7 1.7 0 0 0 1.1 1.5 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.1.4.3.7.6 1 .3.3.7.4 1.1.4h.1v4h-.1a1.7 1.7 0 0 0-1.5 1.1z"></path></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"></path></symbol>
+  <symbol id="i-warning" viewBox="0 0 24 24"><path d="M12 3.8L21 20H3z"></path><path d="M12 9v5M12 17h.01"></path></symbol>
+  <symbol id="i-disk" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"></ellipse><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6"></path><path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"></path></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"></rect><path d="M9.5 3v2M14.5 3v2M9.5 19v2M14.5 19v2M3 9.5h2M3 14.5h2M19 9.5h2M19 14.5h2"></path></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"></path></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2.5"></rect><path d="M7 9l3 3-3 3M12.5 15h4.5"></path></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.4-3 8.2-7 10-4-1.8-7-5.6-7-10V6z"></path><path d="M9 12l2 2 4-4"></path></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"></path></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z"></path></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></symbol>
+  <symbol id="i-volume" viewBox="0 0 24 24"><path d="M4 9.5h3l4-3v11l-4-3H4z"></path><path d="M15 9a4 4 0 0 1 0 6M17.5 6.5a8 8 0 0 1 0 11"></path></symbol>
+  <symbol id="i-side" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="18" rx="2"></rect><path d="M9 8h6"></path></symbol>
+  <symbol id="i-fit" viewBox="0 0 24 24"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"></path></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M8 11l4 4 4-4M4 20h16"></path></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path><path d="M10 11v5M14 11v5"></path></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"></path></symbol>
+  <symbol id="i-command" viewBox="0 0 24 24"><path d="M9 9h6v6H9zM9 9H7a2 2 0 1 1 2-2zM15 9h2a2 2 0 1 0-2-2zM9 15H7a2 2 0 1 0 2 2zM15 15h2a2 2 0 1 1-2 2z"></path></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"></path><circle cx="12" cy="12" r="2.5"></circle></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"></path></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-3M4 13a8 8 0 0 0 14.9 3"></path><path d="M20 4v7h-7M4 20v-7h7"></path></symbol>
+</svg>
+
+<div class="app-window" id="app">
+  <header class="titlebar">
+    <div class="traffic"><i></i><i></i><i></i></div>
+    <div class="brand">
+      <span class="logo"><svg class="icon lg"><use href="#i-phone"></use></svg></span>
+      OpenSim
+    </div>
+    <div class="titlebar-center">
+      <span>Devices</span><span class="path-sep">/</span><span>iPhone Air</span>
+      <span class="pill green"><span class="dot green"></span>Booted</span>
+      <span class="pill orange"><span class="dot orange"></span>agent-42</span>
+    </div>
+    <div class="titlebar-actions">
+      <button class="shortcut-btn" onclick="openPalette()"><svg class="icon sm"><use href="#i-search"></use></svg>Quick Switch <span class="kbd">⌘K</span></button>
+      <span class="pill blue"><svg class="icon xs"><use href="#i-shield"></use></svg>Xcode 27.1</span>
+      <button class="icon-btn" title="Settings"><svg class="icon lg"><use href="#i-gear"></use></svg></button>
+    </div>
+  </header>
+
+  <div class="app-body">
+    <aside class="sidebar">
+      <div class="searchbox">
+        <svg class="icon sm"><use href="#i-search"></use></svg>
+        <input placeholder="Search devices" aria-label="Search devices">
+      </div>
+
+      <div class="side-section"><span>Simulators</span><span class="side-count">5</span></div>
+
+      <div class="device-row selected" onclick="selectDevice(this)">
+        <span class="device-icon"><svg class="icon lg"><use href="#i-phone"></use></svg></span>
+        <span class="device-meta">
+          <span class="device-name">iPhone Air</span>
+          <span class="device-sub"><span class="dot green"></span>Booted · iOS 27.0</span>
+        </span>
+        <span class="mini-badge agent">agent</span>
+      </div>
+
+      <div class="device-row" onclick="selectDevice(this)">
+        <span class="device-icon"><svg class="icon lg"><use href="#i-phone"></use></svg></span>
+        <span class="device-meta">
+          <span class="device-name">iPhone 17e</span>
+          <span class="device-sub"><span class="dot gray"></span>Shutdown · iOS 27.0</span>
+        </span>
+      </div>
+
+      <div class="device-row" onclick="selectDevice(this)">
+        <span class="device-icon"><svg class="icon lg"><use href="#i-phone"></use></svg></span>
+        <span class="device-meta">
+          <span class="device-name">iPad Pro 13-inch (M5)</span>
+          <span class="device-sub"><span class="dot green"></span>Booted · iOS 27.0</span>
+        </span>
+      </div>
+
+      <div class="device-row" onclick="selectDevice(this)">
+        <span class="device-icon"><svg class="icon lg"><use href="#i-watch"></use></svg></span>
+        <span class="device-meta">
+          <span class="device-name">Apple Watch Series 12</span>
+          <span class="device-sub"><span class="dot gray"></span>Shutdown · watchOS 27.0</span>
+        </span>
+        <span class="mini-badge warn">runtime</span>
+      </div>
+
+      <div class="device-row" onclick="selectDevice(this)">
+        <span class="device-icon"><svg class="icon lg"><use href="#i-tv"></use></svg></span>
+        <span class="device-meta">
+          <span class="device-name">Apple TV 4K</span>
+          <span class="device-sub"><span class="dot gray"></span>Shutdown · tvOS 27.0</span>
+        </span>
+        <span class="mini-badge warn">runtime</span>
+      </div>
+
+      <div class="side-divider"></div>
+      <div class="side-section"><span>Workspace</span><span class="side-count">3</span></div>
+      <div class="side-link"><svg class="icon sm"><use href="#i-disk"></use></svg>Storage<span class="side-count" style="margin-left:auto">84.2 GB</span></div>
+      <div class="side-link"><svg class="icon sm"><use href="#i-activity"></use></svg>Performance<span class="side-count" style="margin-left:auto">2 live</span></div>
+      <div class="side-link"><svg class="icon sm"><use href="#i-terminal"></use></svg>Agent Activity<span class="side-count" style="margin-left:auto">1</span></div>
+
+      <div class="sidebar-footer">
+        <div class="disk-card">
+          <div class="disk-top"><span>Disk</span><b>359 / 460 GB</b></div>
+          <div class="disk-bar"><span></span></div>
+        </div>
+        <button class="side-action" onclick="showView('devices')"><svg class="icon sm"><use href="#i-plus"></use></svg>New Device</button>
+        <div class="side-link" style="justify-content:center"><svg class="icon xs"><use href="#i-refresh"></use></svg>Manage Runtimes</div>
+        <div class="side-note">Prototype · sample data</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="main-header">
+        <div class="header-row">
+          <div>
+            <h1 id="viewTitle">Devices</h1>
+            <p class="subtitle" id="viewSubtitle">5 simulators · 2 booted · 1 agent controlling iPhone Air</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn ghost"><svg class="icon sm"><use href="#i-refresh"></use></svg>Refresh</button>
+            <button class="btn primary"><svg class="icon sm"><use href="#i-plus"></use></svg>New Device</button>
+          </div>
+        </div>
+        <nav class="tabs" aria-label="Views">
+          <button class="tab active" data-view="devices" onclick="showView('devices')">Devices</button>
+          <button class="tab" data-view="storage" onclick="showView('storage')">Storage</button>
+          <button class="tab" data-view="performance" onclick="showView('performance')">Performance</button>
+          <button class="tab" data-view="activity" onclick="showView('activity')">Activity <span class="tab-count">6</span></button>
+        </nav>
+      </header>
+
+      <section class="view active" id="view-devices">
+        <div class="section-head">
+          <div class="section-title">Booted</div>
+          <div class="section-meta">2 devices · 1 lease</div>
+        </div>
+        <div class="device-grid">
+          <article class="device-card selected">
+            <div class="card-preview"><div class="phone-mini"><div class="screen"></div></div></div>
+            <div class="card-top">
+              <div style="min-width:0">
+                <div class="card-name">iPhone Air</div>
+                <div class="card-sub">iOS 27.0 · 1260 × 2736</div>
+              </div>
+              <span class="state-badge">Booted</span>
+            </div>
+            <div class="card-badges"><span class="agent-badge">agent-42 controlling</span></div>
+            <div class="card-foot">
+              <span class="card-metric">12% CPU · 1.2 GB</span>
+              <div class="card-buttons">
+                <button class="tiny-btn blue" onclick="openDevice()">Open</button>
+                <button class="tiny-btn">⋯</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="device-card">
+            <div class="card-preview" style="background:linear-gradient(155deg,#f1f3f7,#e9ebf0)">
+              <div class="phone-mini" style="opacity:.48"><div class="screen"></div></div>
+            </div>
+            <div class="card-top">
+              <div style="min-width:0">
+                <div class="card-name">iPhone 17e</div>
+                <div class="card-sub">iOS 27.0 · 1170 × 2532</div>
+              </div>
+              <span class="state-badge off">Shutdown</span>
+            </div>
+            <div class="card-badges"><span class="card-metric">Last boot 2h ago</span></div>
+            <div class="card-foot">
+              <span class="card-metric">Available</span>
+              <div class="card-buttons">
+                <button class="tiny-btn blue">Boot</button>
+                <button class="tiny-btn">⋯</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="device-card">
+            <div class="card-preview"><div class="phone-mini" style="width:74px;height:106px;border-radius:11px"><div class="screen"></div></div></div>
+            <div class="card-top">
+              <div style="min-width:0">
+                <div class="card-name">iPad Pro 13-inch (M5)</div>
+                <div class="card-sub">iOS 27.0 · 2064 × 2752</div>
+              </div>
+              <span class="state-badge">Booted</span>
+            </div>
+            <div class="card-badges"><span class="card-metric">No agent session</span></div>
+            <div class="card-foot">
+              <span class="card-metric">38% CPU · 2.4 GB</span>
+              <div class="card-buttons">
+                <button class="tiny-btn blue">Open</button>
+                <button class="tiny-btn">⋯</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="device-card">
+            <div class="card-preview">
+              <div class="phone-mini" style="width:44px;height:56px;border-radius:12px;margin-top:24px"><div class="screen"></div></div>
+            </div>
+            <div class="card-top">
+              <div style="min-width:0">
+                <div class="card-name">Apple Watch Series 12</div>
+                <div class="card-sub">watchOS 27.0 · runtime missing</div>
+              </div>
+              <span class="state-badge warn">Runtime</span>
+            </div>
+            <div class="card-badges"><span class="card-metric">Install runtime to boot</span></div>
+            <div class="card-foot">
+              <span class="card-metric">Not installed</span>
+              <div class="card-buttons">
+                <button class="tiny-btn">Install</button>
+                <button class="tiny-btn">⋯</button>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div class="section-head section-gap">
+          <div class="section-title">Runtimes</div>
+          <div class="section-meta">3 platforms</div>
+        </div>
+        <div class="runtime-grid">
+          <div class="runtime-card">
+            <div class="runtime-icon"><svg class="icon lg"><use href="#i-phone"></use></svg></div>
+            <div class="runtime-meta"><div class="runtime-name">iOS 27.0</div><div class="runtime-sub">Installed · 9.8 GB</div></div>
+            <span class="runtime-status ok">Ready</span>
+          </div>
+          <div class="runtime-card">
+            <div class="runtime-icon"><svg class="icon lg"><use href="#i-watch"></use></svg></div>
+            <div class="runtime-meta"><div class="runtime-name">watchOS 27.0</div><div class="runtime-sub">Not installed</div></div>
+            <button class="tiny-btn">Install</button>
+          </div>
+          <div class="runtime-card">
+            <div class="runtime-icon"><svg class="icon lg"><use href="#i-tv"></use></svg></div>
+            <div class="runtime-meta"><div class="runtime-name">tvOS 27.0</div><div class="runtime-sub">Not installed</div></div>
+            <button class="tiny-btn">Install</button>
+          </div>
+        </div>
+
+        <div class="agent-strip">
+          <div class="agent-avatar">A42</div>
+          <div class="agent-copy">
+            <div class="agent-title">agent-42 is controlling iPhone Air</div>
+            <div class="agent-sub">MCP · ui.tap on Search field · 18 ms · lease expires in 3:42</div>
+          </div>
+          <div class="agent-actions">
+            <button class="btn small ghost">Pause agent</button>
+            <button class="btn small" onclick="takeControl()">Take control</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-storage">
+        <div class="sample-note"><svg class="icon sm"><use href="#i-eye"></use></svg>Sample sizes for layout preview. Real values come from the daemon storage scanner.</div>
+        <div class="stats-row">
+          <div class="stat-card"><div class="stat-label"><svg class="icon xs"><use href="#i-disk"></use></svg>Reclaimable</div><div class="stat-value">84.2 GB</div><div class="stat-sub">Across 6 groups</div></div>
+          <div class="stat-card"><div class="stat-label">Simulators</div><div class="stat-value">31.6 GB</div><div class="stat-sub">5 devices · 1 runtime</div></div>
+          <div class="stat-card"><div class="stat-label">Xcode data</div><div class="stat-value">52.6 GB</div><div class="stat-sub">DerivedData + Archives</div></div>
+          <div class="stat-card"><div class="stat-label">Disk free</div><div class="stat-value">70 GB</div><div class="stat-sub">APFS data volume</div></div>
+        </div>
+        <div class="storage-bar">
+          <span style="width:19%;background:var(--blue)"></span>
+          <span style="width:12%;background:var(--purple)"></span>
+          <span style="width:34%;background:var(--orange)"></span>
+          <span style="width:15%;background:var(--green)"></span>
+          <span style="width:20%;background:#b7bac1"></span>
+        </div>
+        <div class="storage-legend">
+          <span class="legend-item"><i class="legend-swatch" style="background:var(--blue)"></i>Device data 19%</span>
+          <span class="legend-item"><i class="legend-swatch" style="background:var(--purple)"></i>Runtimes 12%</span>
+          <span class="legend-item"><i class="legend-swatch" style="background:var(--orange)"></i>DerivedData 34%</span>
+          <span class="legend-item"><i class="legend-swatch" style="background:var(--green)"></i>Archives 15%</span>
+          <span class="legend-item"><i class="legend-swatch" style="background:#b7bac1"></i>Caches 20%</span>
+        </div>
+
+        <div class="storage-layout">
+          <div class="category-list">
+            <div class="category-row active">All items<span class="cat-size">84.2 GB</span></div>
+            <div class="category-row">Simulators<span class="cat-size">31.6 GB</span></div>
+            <div class="category-row">Runtimes<span class="cat-size">9.8 GB</span></div>
+            <div class="category-row">DerivedData<span class="cat-size">28.7 GB</span></div>
+            <div class="category-row">Archives<span class="cat-size">12.4 GB</span></div>
+            <div class="category-row">Caches<span class="cat-size">6.8 GB</span></div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th style="width:26px"></th><th>Item</th><th>Size</th><th>Last used</th><th>Safety</th></tr></thead>
+              <tbody>
+                <tr class="selected" onclick="selectStorage(this)">
+                  <td><span class="check on"></span></td>
+                  <td><div class="cell-name"><span class="cell-icon"><svg class="icon sm"><use href="#i-folder"></use></svg></span><div><div class="cell-title">Archives</div><div class="cell-sub">8 archives · Xcode</div></div></div></td>
+                  <td><div class="size-cell"><span class="size-bar"><span style="width:70%;background:var(--green)"></span></span><span class="size-num">12.4 GB</span></div></td>
+                  <td>3 days ago</td><td><span class="safety safe">Safe</span></td>
+                </tr>
+                <tr onclick="selectStorage(this)">
+                  <td><span class="check"></span></td>
+                  <td><div class="cell-name"><span class="cell-icon"><svg class="icon sm"><use href="#i-folder"></use></svg></span><div><div class="cell-title">DerivedData</div><div class="cell-sub">14 projects · Xcode</div></div></div></td>
+                  <td><div class="size-cell"><span class="size-bar"><span style="width:100%;background:var(--orange)"></span></span><span class="size-num">28.7 GB</span></div></td>
+                  <td>12 min ago</td><td><span class="safety safe">Safe</span></td>
+                </tr>
+                <tr onclick="selectStorage(this)">
+                  <td><span class="check"></span></td>
+                  <td><div class="cell-name"><span class="cell-icon"><svg class="icon sm"><use href="#i-phone"></use></svg></span><div><div class="cell-title">iPhone Air</div><div class="cell-sub">Simulator device · 42 apps</div></div></div></td>
+                  <td><div class="size-cell"><span class="size-bar"><span style="width:50%;background:var(--blue)"></span></span><span class="size-num">14.2 GB</span></div></td>
+                  <td>Now</td><td><span class="safety inuse">In use</span></td>
+                </tr>
+                <tr onclick="selectStorage(this)">
+                  <td><span class="check"></span></td>
+                  <td><div class="cell-name"><span class="cell-icon"><svg class="icon sm"><use href="#i-cpu"></use></svg></span><div><div class="cell-title">iOS 27.0 runtime</div><div class="cell-sub">Installed runtime</div></div></div></td>
+                  <td><div class="size-cell"><span class="size-bar"><span style="width:35%;background:var(--purple)"></span></span><span class="size-num">9.8 GB</span></div></td>
+                  <td>1 day ago</td><td><span class="safety inuse">In use</span></td>
+                </tr>
+                <tr onclick="selectStorage(this)">
+                  <td><span class="check"></span></td>
+                  <td><div class="cell-name"><span class="cell-icon"><svg class="icon sm"><use href="#i-disk"></use></svg></span><div><div class="cell-title">Simulator caches & logs</div><div class="cell-sub">CoreSimulator</div></div></div></td>
+                  <td><div class="size-cell"><span class="size-bar"><span style="width:24%;background:#9a9ea7"></span></span><span class="size-num">6.8 GB</span></div></td>
+                  <td>Yesterday</td><td><span class="safety safe">Safe</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="detail-panel">
+            <div class="detail-icon"><svg class="icon lg"><use href="#i-folder"></use></svg></div>
+            <div class="detail-title" id="storageDetailTitle">Archives</div>
+            <div class="detail-sub" id="storageDetailSub">8 archives · 12.4 GB</div>
+            <div style="margin-top:10px">
+              <div class="detail-kv"><span>Last used</span><b>3 days ago</b></div>
+              <div class="detail-kv"><span>Method</span><b>Move to Trash</b></div>
+              <div class="detail-kv"><span>Reclaimable</span><b>12.4 GB</b></div>
+            </div>
+            <div class="detail-note">Clean runs through a plan token that expires in 5 minutes. In-use devices and runtimes are blocked.</div>
+            <div class="detail-actions">
+              <button class="btn primary" style="width:100%"><svg class="icon sm"><use href="#i-trash"></use></svg>Review clean plan</button>
+              <button class="btn ghost" style="width:100%">Reveal in Finder</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-performance">
+        <div class="sample-note"><svg class="icon sm"><use href="#i-eye"></use></svg>Sample metrics for layout preview. Real values come from the daemon metrics sampler.</div>
+        <div class="stats-row">
+          <div class="stat-card"><div class="stat-label"><svg class="icon xs"><use href="#i-cpu"></use></svg>Total CPU</div><div class="stat-value">50%</div><div class="stat-sub">2 devices</div></div>
+          <div class="stat-card"><div class="stat-label">Total RAM</div><div class="stat-value">3.6 GB</div><div class="stat-sub">of 16 GB</div></div>
+          <div class="stat-card"><div class="stat-label">Alerts</div><div class="stat-value" style="color:#b26b00">1</div><div class="stat-sub">CPU above threshold</div></div>
+          <div class="stat-card"><div class="stat-label">Samples</div><div class="stat-value">600</div><div class="stat-sub">10-minute ring</div></div>
+        </div>
+
+        <div class="perf-grid section-gap">
+          <div class="perf-card">
+            <div class="perf-head">
+              <span class="device-icon"><svg class="icon lg"><use href="#i-phone"></use></svg></span>
+              <div><div class="perf-name">iPhone Air</div><div class="perf-sub">iOS 27.0 · booted · agent-42</div></div>
+              <span class="state-badge">Booted</span>
+            </div>
+            <div class="perf-numbers">
+              <div class="perf-number"><div class="n">12%</div><div class="l">CPU</div></div>
+              <div class="perf-number"><div class="n">1.2 GB</div><div class="l">RAM</div></div>
+              <div class="perf-number"><div class="n">42</div><div class="l">Processes</div></div>
+            </div>
+            <svg class="sparkline" viewBox="0 0 300 46" preserveAspectRatio="none">
+              <defs><linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0a84ff" stop-opacity=".25"/><stop offset="1" stop-color="#0a84ff" stop-opacity="0"/></linearGradient></defs>
+              <path d="M0 36 L20 34 L40 35 L60 30 L80 32 L100 26 L120 29 L140 24 L160 26 L180 20 L200 23 L220 18 L240 22 L260 19 L280 21 L300 16 L300 46 L0 46 Z" fill="url(#g1)"/>
+              <path d="M0 36 L20 34 L40 35 L60 30 L80 32 L100 26 L120 29 L140 24 L160 26 L180 20 L200 23 L220 18 L240 22 L260 19 L280 21 L300 16" fill="none" stroke="#0a84ff" stroke-width="1.6"/>
+            </svg>
+            <div class="perf-actions"><button class="btn small">Terminate app</button><button class="btn small">Shut down</button><button class="btn small ghost">Open window</button></div>
+          </div>
+
+          <div class="perf-card">
+            <div class="perf-head">
+              <span class="device-icon"><svg class="icon lg"><use href="#i-phone"></use></svg></span>
+              <div><div class="perf-name">iPad Pro 13-inch (M5)</div><div class="perf-sub">iOS 27.0 · booted · no agent</div></div>
+              <span class="state-badge">Booted</span>
+            </div>
+            <div class="perf-numbers">
+              <div class="perf-number"><div class="n" style="color:#b26b00">38%</div><div class="l">CPU</div></div>
+              <div class="perf-number"><div class="n">2.4 GB</div><div class="l">RAM</div></div>
+              <div class="perf-number"><div class="n">68</div><div class="l">Processes</div></div>
+            </div>
+            <svg class="sparkline" viewBox="0 0 300 46" preserveAspectRatio="none">
+              <defs><linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff9f0a" stop-opacity=".25"/><stop offset="1" stop-color="#ff9f0a" stop-opacity="0"/></linearGradient></defs>
+              <path d="M0 30 L20 28 L40 29 L60 24 L80 26 L100 18 L120 22 L140 14 L160 18 L180 12 L200 16 L220 10 L240 14 L260 8 L280 12 L300 9 L300 46 L0 46 Z" fill="url(#g2)"/>
+              <path d="M0 30 L20 28 L40 29 L60 24 L80 26 L100 18 L120 22 L140 14 L160 18 L180 12 L200 16 L220 10 L240 14 L260 8 L280 12 L300 9" fill="none" stroke="#ff9f0a" stroke-width="1.6"/>
+            </svg>
+            <div class="perf-actions"><button class="btn small">Terminate app</button><button class="btn small">Shut down</button><button class="btn small ghost">Open window</button></div>
+          </div>
+        </div>
+
+        <div class="alert-row"><svg class="icon sm"><use href="#i-warning"></use></svg><span><b>iPad Pro 13-inch:</b> CPU above 150% for 30 seconds</span><span class="spacer"></span><button class="btn small">Review</button></div>
+
+        <div class="section-head section-gap"><div class="section-title">Processes</div><div class="section-meta">Top 4 by CPU</div></div>
+        <div class="table-wrap process-table">
+          <table>
+            <thead><tr><th>Process</th><th>Device</th><th>PID</th><th>CPU</th><th>RAM</th></tr></thead>
+            <tbody>
+              <tr><td>SpringBoard</td><td>iPad Pro</td><td>66484</td><td>18.4%</td><td>312 MB</td></tr>
+              <tr><td>MobileSafari</td><td>iPad Pro</td><td>70122</td><td>9.2%</td><td>842 MB</td></tr>
+              <tr><td>Settings</td><td>iPhone Air</td><td>58529</td><td>4.1%</td><td>128 MB</td></tr>
+              <tr><td>agent runner</td><td>iPhone Air</td><td>69981</td><td>2.6%</td><td>64 MB</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="view" id="view-activity">
+        <div class="activity-layout">
+          <div class="activity-card">
+            <div class="activity-head">
+              <span class="feed-icon" style="width:24px;height:24px;flex-basis:24px"><svg class="icon sm"><use href="#i-activity"></use></svg></span>
+              <span class="activity-title">Live activity</span>
+              <div class="activity-filters">
+                <button class="filter-btn active">All</button><button class="filter-btn">MCP</button><button class="filter-btn">CLI</button><button class="filter-btn">Human</button>
+              </div>
+            </div>
+            <div class="feed">
+              <div class="feed-item">
+                <div class="feed-time">10:42:24</div>
+                <div class="feed-icon gray"><svg class="icon sm"><use href="#i-camera"></use></svg></div>
+                <div class="feed-body"><div class="feed-title"><b>screen_screenshot</b> captured iPhone Air</div><div class="feed-sub"><span class="tag mcp">MCP</span> JPEG · 0.5 scale · 120 ms <span class="tag">agent-42</span></div></div>
+              </div>
+              <div class="feed-item">
+                <div class="feed-time">10:42:23</div>
+                <div class="feed-icon"><svg class="icon sm"><use href="#i-keyboard"></use></svg></div>
+                <div class="feed-body"><div class="feed-title"><b>ui.type</b> “hello” into Settings search</div><div class="feed-sub"><span class="tag mcp">MCP</span> 26 ms · 5 key events</div></div>
+              </div>
+              <div class="feed-item">
+                <div class="feed-time">10:42:22</div>
+                <div class="feed-icon"><svg class="icon sm"><use href="#i-gesture"></use></svg></div>
+                <div class="feed-body"><div class="feed-title"><b>ui.tap</b> on “Search” field</div><div class="feed-sub"><span class="tag mcp">MCP</span> 18 ms · selector id=settings.search</div></div>
+              </div>
+              <div class="feed-item">
+                <div class="feed-time">10:42:20</div>
+                <div class="feed-icon"><svg class="icon sm"><use href="#i-eye"></use></svg></div>
+                <div class="feed-body"><div class="feed-title"><b>ui.tree</b> read accessibility tree</div><div class="feed-sub"><span class="tag mcp">MCP</span> 184 nodes · 42 ms · truncated=false</div></div>
+              </div>
+              <div class="feed-item">
+                <div class="feed-time">10:42:18</div>
+                <div class="feed-icon orange"><svg class="icon sm"><use href="#i-lock"></use></svg></div>
+                <div class="feed-body"><div class="feed-title"><b>agent-42</b> acquired control lease</div><div class="feed-sub"><span class="tag mcp">MCP</span> TTL 5:00 · owner agent-42 · device iPhone Air</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="session-card">
+              <div class="session-top">
+                <div class="session-avatar">A42</div>
+                <div><div class="session-name">agent-42</div><div class="session-sub">MCP · stdio · started 2m ago</div></div>
+              </div>
+              <div style="margin-top:9px">
+                <div class="session-kv"><span>Device</span><b>iPhone Air</b></div>
+                <div class="session-kv"><span>Lease</span><b style="color:#a35f00">control</b></div>
+                <div class="session-kv"><span>Expires</span><b>3:42</b></div>
+              </div>
+              <div class="lease-meter"><span></span></div>
+              <div class="session-actions">
+                <button class="btn small">Pause agent</button>
+                <button class="btn small primary" onclick="takeControl()">Take control</button>
+                <button class="btn small danger">Release lease</button>
+              </div>
+              <div class="takeover-note">Taking control revokes the agent lease after a 3-second grace period. Every transfer is written to the audit log.</div>
+            </div>
+
+            <div class="session-card" style="margin-top:10px">
+              <div class="session-top">
+                <div class="session-avatar" style="background:#5b4a86">CLI</div>
+                <div><div class="session-name">opensim CLI</div><div class="session-sub">observer · idle</div></div>
+              </div>
+              <div style="margin-top:8px">
+                <div class="session-kv"><span>Last command</span><b>device list</b></div>
+                <div class="session-kv"><span>Result</span><b>5 devices</b></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<div class="device-window-overlay" id="deviceWindowOverlay">
+  <div class="floating-device-window" id="floatingDeviceWindow">
+    <div class="dw-titlebar" id="floatingTitlebar">
+      <div class="traffic"><i onclick="closeDeviceWindow()" style="cursor:pointer"></i><i></i><i></i></div>
+      <span class="dw-title">iPhone Air</span>
+      <span class="dw-title-meta">iOS 27.0 · 1260 × 2736</span>
+      <span class="pill green" style="height:21px;font-size:9px"><span class="dot green"></span>Booted</span>
+      <span class="dw-title-spacer"></span>
+      <span class="pill orange" style="height:21px;font-size:9px"><span class="dot orange"></span>agent-42</span>
+      <button class="floating-close" onclick="closeDeviceWindow()" title="Close"><svg class="icon lg"><use href="#i-x"></use></svg></button>
+    </div>
+    <div class="dw-toolbar">
+      <button class="tool" title="Home"><svg class="icon lg"><use href="#i-home"></use></svg></button>
+      <button class="tool" title="Side button"><svg class="icon lg"><use href="#i-side"></use></svg></button>
+      <button class="tool" title="Volume"><svg class="icon lg"><use href="#i-volume"></use></svg></button>
+      <span class="tool-sep"></span>
+      <button class="tool" title="Rotate"><svg class="icon lg"><use href="#i-rotate"></use></svg></button>
+      <button class="tool" title="Screenshot"><svg class="icon lg"><use href="#i-camera"></use></svg></button>
+      <button class="tool active" title="Record"><svg class="icon lg"><use href="#i-record"></use></svg></button>
+      <button class="tool" title="Keyboard"><svg class="icon lg"><use href="#i-keyboard"></use></svg></button>
+      <button class="tool active" title="Gesture input"><svg class="icon lg"><use href="#i-gesture"></use></svg></button>
+      <span class="tool-sep"></span>
+      <button class="tool" title="Quick switch" onclick="openPalette()"><svg class="icon lg"><use href="#i-command"></use></svg></button>
+      <div class="fit-control"><button class="active">Fit</button><button>100%</button></div>
+    </div>
+    <div class="dw-stage">
+      <div class="phone floating-phone"><div class="screen"></div><div class="island"></div></div>
+    </div>
+    <div class="floating-statusbar" id="floatingAgentStatus">
+      <span class="dot orange"></span><b>agent-42</b> is controlling · <button class="link-btn" onclick="takeControl()">Take control</button>
+      <span class="spacer"></span><span class="kbd">⌘K</span> switch
+    </div>
+  </div>
+</div>
+
+<div class="palette-overlay" id="palette" onclick="closePalette(event)">
+  <div class="palette" onclick="event.stopPropagation()">
+    <div class="palette-search">
+      <svg class="icon lg"><use href="#i-search"></use></svg>
+      <input id="paletteInput" placeholder="Jump to a device…" aria-label="Quick switch">
+      <span class="kbd">esc</span>
+    </div>
+    <div class="palette-list">
+      <div class="palette-row active" onclick="choosePalette('device')">
+        <span class="device-icon"><svg class="icon lg"><use href="#i-phone"></use></svg></span>
+        <span><span class="palette-name">iPhone Air</span><span class="palette-sub">Booted · iOS 27.0 · agent-42</span></span>
+        <span class="palette-right"><span class="pill orange" style="height:20px;font-size:8.5px"><span class="dot orange"></span>Agent</span><span class="kbd">↵</span></span>
+      </div>
+      <div class="palette-row" onclick="choosePalette('device')">
+        <span class="device-icon"><svg class="icon lg"><use href="#i-phone"></use></svg></span>
+        <span><span class="palette-name">iPad Pro 13-inch (M5)</span><span class="palette-sub">Booted · iOS 27.0</span></span>
+        <span class="palette-right"><span class="pill green" style="height:20px;font-size:8.5px"><span class="dot green"></span>Booted</span><span class="kbd">↵</span></span>
+      </div>
+      <div class="palette-row" onclick="choosePalette('device')">
+        <span class="device-icon"><svg class="icon lg"><use href="#i-phone"></use></svg></span>
+        <span><span class="palette-name">iPhone 17e</span><span class="palette-sub">Shutdown · iOS 27.0</span></span>
+        <span class="palette-right"><span class="kbd">↵</span></span>
+      </div>
+      <div class="palette-row" onclick="choosePalette('device')">
+        <span class="device-icon"><svg class="icon lg"><use href="#i-watch"></use></svg></span>
+        <span><span class="palette-name">Apple Watch Series 12</span><span class="palette-sub">Runtime missing · watchOS 27.0</span></span>
+        <span class="palette-right"><span class="mini-badge warn">Install</span></span>
+      </div>
+    </div>
+    <div class="palette-footer">
+      <span class="kbd">↑</span><span class="kbd">↓</span> navigate
+      <span class="kbd">↵</span> open
+      <span class="spacer"></span>
+      <span>2 booted · 1 agent</span>
+    </div>
+  </div>
+</div>
+
+<script>
+  const viewMeta = {
+    devices: ["Devices", "5 simulators · 2 booted · 1 agent controlling iPhone Air"],
+    storage: ["Storage", "Disk usage, safe cleanup, and reclaimable space"],
+    performance: ["Performance", "CPU and memory per simulator, live process list"],
+    activity: ["Agent Activity", "Tool calls, lease transfers, and audit events"]
+  };
+
+  function showView(name) {
+    if (name === "quick-switch") {
+      showView("devices");
+      openPalette();
+      return;
+    }
+    if (name === "window") {
+      showView("devices");
+      openDeviceWindow();
+      return;
+    }
+    if (!viewMeta[name]) name = "devices";
+    document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + name));
+    document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.view === name));
+    document.getElementById("viewTitle").textContent = viewMeta[name][0];
+    document.getElementById("viewSubtitle").textContent = viewMeta[name][1];
+    if (history.replaceState) history.replaceState(null, "", "#" + name);
+  }
+
+  function openDevice() {
+    openDeviceWindow();
+  }
+
+  function openDeviceWindow() {
+    const win = document.getElementById("floatingDeviceWindow");
+    win.style.left = "50%";
+    win.style.top = "50%";
+    win.style.transform = "translate(-50%, -50%)";
+    document.getElementById("deviceWindowOverlay").classList.add("open");
+  }
+
+  function closeDeviceWindow() {
+    document.getElementById("deviceWindowOverlay").classList.remove("open");
+  }
+
+  function openPalette() {
+    document.getElementById("palette").classList.add("open");
+    setTimeout(() => document.getElementById("paletteInput").focus(), 30);
+  }
+
+  function closePalette(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById("palette").classList.remove("open");
+  }
+
+  function choosePalette(view) {
+    closePalette();
+    showView(view);
+  }
+
+  function selectDevice(row) {
+    document.querySelectorAll(".device-row").forEach(r => r.classList.remove("selected"));
+    row.classList.add("selected");
+  }
+
+  function takeControl() {
+    document.querySelectorAll(".agent-badge").forEach(b => { b.textContent = "you have control"; b.style.background = "#eaf7ee"; b.style.color = "#20743d"; });
+    const banner = document.getElementById("agentBanner");
+    if (banner) {
+      banner.style.background = "rgba(20, 44, 27, 0.86)";
+      banner.style.borderColor = "rgba(47,180,90,0.4)";
+      banner.style.color = "#b9f0c8";
+      banner.innerHTML = '<span class="agent-avatar" style="background:#2fb45a;color:#063b17">YOU</span><span class="banner-copy"><b>You</b> have control<br>agent-42 is revoked</span><button class="banner-btn" style="background:#9ee7b1;color:#0b4420" onclick="takeControl()">Release</button>';
+    }
+    document.querySelectorAll(".pill.orange").forEach(p => { if (p.textContent.includes("agent")) { p.className = "pill green"; p.innerHTML = '<span class="dot green"></span>you'; } });
+    const floating = document.getElementById("floatingAgentStatus");
+    if (floating) {
+      floating.innerHTML = '<span class="dot green"></span><b>You</b> have control · agent-42 revoked <span class="spacer"></span><span class="kbd">⌘K</span> switch';
+    }
+  }
+
+  function selectStorage(row) {
+    document.querySelectorAll("#view-storage tbody tr").forEach(r => r.classList.remove("selected"));
+    row.classList.add("selected");
+    const title = row.querySelector(".cell-title").textContent;
+    const sub = row.querySelector(".cell-sub").textContent;
+    document.getElementById("storageDetailTitle").textContent = title;
+    document.getElementById("storageDetailSub").textContent = sub;
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      openPalette();
+    }
+    if (e.key === "Escape") { closePalette(); closeDeviceWindow(); }
+  });
+
+  (function enableWindowDrag() {
+    const win = document.getElementById("floatingDeviceWindow");
+    const bar = document.getElementById("floatingTitlebar");
+    let dragging = false, startX = 0, startY = 0, originLeft = 0, originTop = 0;
+    bar.addEventListener("pointerdown", (e) => {
+      if (e.target.closest("button")) return;
+      const rect = win.getBoundingClientRect();
+      win.style.transform = "none";
+      win.style.left = rect.left + "px";
+      win.style.top = rect.top + "px";
+      dragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      originLeft = rect.left;
+      originTop = rect.top;
+      bar.setPointerCapture(e.pointerId);
+    });
+    bar.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      win.style.left = (originLeft + e.clientX - startX) + "px";
+      win.style.top = (originTop + e.clientY - startY) + "px";
+    });
+    bar.addEventListener("pointerup", () => { dragging = false; });
+    bar.addEventListener("pointercancel", () => { dragging = false; });
+  })();
+
+  window.addEventListener("hashchange", () => showView(location.hash.slice(1) || "devices"));
+
+  const initial = location.hash.slice(1) || "devices";
+  showView(initial);
+</script>
+</body>
+</html>

@@ -391,6 +391,7 @@ Mọi lỗi có `retryable` và `recovery` để agent quyết định bước t
 - Toolbar: Home, Side, Volume Up/Down, Lock, Rotate Left/Right, Screenshot, Record, Keyboard, Gesture mode, Zoom.
 - Gesture: tap, long-press, swipe, drag, pinch, rotate, multi-touch; bàn phím Mac ánh xạ vào simulator; paste hai chiều.
 - Hỗ trợ nhiều cửa sổ device cùng lúc; mỗi cửa sổ giữ lease `control` khi focus.
+- Device luôn mở trong cửa sổ riêng như Simulator; không có chế độ nhúng tab và không có top-level tab "Device Window". Cửa sổ device không có inspector agent bên trong; trạng thái agent nằm ở sidebar/Activity và tối đa một status bar mỏng.
 - `Cmd+K` mở device palette: tìm, boot, switch, take control.
 - Menu bar extra: danh sách device, boot/shutdown, switch nhanh, trạng thái agent.
 - Cửa sổ đóng thì giải phóng lease; device vẫn chạy.
