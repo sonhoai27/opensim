@@ -643,6 +643,203 @@
     font-size: 9.5px; font-weight: 650; padding: 0; cursor: pointer;
   }
 
+  .device-stack {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: 360px; display: flex; flex-direction: column; align-items: center; gap: 10px;
+  }
+  .compact-device-window {
+    position: relative;
+    width: 360px; height: min(720px, calc(100vh - 110px));
+    background: #15171d; border-radius: 14px; overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.14);
+    box-shadow: 0 34px 90px rgba(0,0,0,0.5);
+    display: flex; flex-direction: column;
+  }
+  .compact-titlebar {
+    height: 38px; flex: 0 0 38px; display: flex; align-items: center; gap: 8px;
+    padding: 0 8px 0 10px; background: #242730; color: #e9ebf1;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    position: relative; z-index: 6; cursor: grab;
+  }
+  .compact-titlebar:active { cursor: grabbing; }
+  .compact-titlebar .traffic { gap: 7px; }
+  .compact-titlebar .traffic i { width: 10px; height: 10px; }
+  .compact-title { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+  .compact-name { font-size: 11px; font-weight: 650; white-space: nowrap; }
+  .compact-runtime { font-size: 9px; color: #9ca2b1; white-space: nowrap; }
+  .live-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--green);
+    box-shadow: 0 0 0 3px rgba(47,180,90,0.12); flex: 0 0 6px;
+  }
+  .dw-title-spacer { flex: 1; }
+  .agent-pill {
+    height: 23px; display: flex; align-items: center; gap: 5px; padding: 0 7px;
+    border-radius: 999px; border: 1px solid rgba(255,159,10,0.32);
+    background: rgba(255,159,10,0.12); color: #ffd28a; font-size: 9px; font-weight: 600;
+    cursor: pointer; white-space: nowrap;
+  }
+  .agent-pill:hover { background: rgba(255,159,10,0.2); }
+  .agent-pill .dot { width: 5px; height: 5px; flex: 0 0 5px; }
+  .agent-pill .icon { color: #c9964a; }
+  .controls-btn {
+    width: 26px; height: 26px; border: 0; border-radius: 6px; background: transparent;
+    color: #aeb5c4; display: grid; place-items: center; cursor: pointer;
+  }
+  .controls-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+  .compact-stage {
+    flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(320px 460px at 50% 44%, #2b2f3a, #171a21);
+    padding: 10px;
+  }
+  .compact-phone {
+    height: 100%; max-height: 660px; width: auto; max-width: 100%;
+    aspect-ratio: 1260 / 2736;
+    border-radius: 42px; padding: 7px;
+    background: #08090b; position: relative;
+    box-shadow: 0 18px 44px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.08);
+  }
+  .compact-phone .screen {
+    width: 100%; height: 100%; border-radius: 35px;
+    background-image: var(--sim-image); background-size: cover; background-position: top center;
+  }
+  .compact-phone .island {
+    position: absolute; top: 15px; left: 50%; transform: translateX(-50%);
+    width: 78px; height: 22px; border-radius: 12px; background: #050506;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+  }
+  .compact-popover {
+    position: absolute; top: 42px; width: 216px; display: none;
+    background: #2b2e38; border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 9px; box-shadow: 0 18px 50px rgba(0,0,0,0.45);
+    padding: 10px; z-index: 8; color: #e6e8ee;
+  }
+  .compact-popover.open { display: block; }
+  .agent-popover { top: 42px; right: 40px; width: 210px; }
+  .controls-popover { top: auto; bottom: 58px; right: 0; width: 220px; }
+  .popover-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+  .popover-title { font-size: 9px; font-weight: 700; letter-spacing: 0.08em; color: #858c9c; text-transform: uppercase; }
+  .popover-tag { font-size: 8px; font-weight: 650; padding: 2px 5px; border-radius: 999px; color: #ffc46b; background: rgba(255,159,10,0.13); }
+  .popover-kv { display: flex; justify-content: space-between; font-size: 9.5px; padding: 3px 0; }
+  .popover-kv span { color: #9299a8; }
+  .popover-kv b { font-weight: 600; color: #e9ebf1; }
+  .popover-note { font-size: 8.5px; color: #8f96a6; line-height: 1.4; margin-top: 7px; }
+  .agent-popover .lease-meter { background: rgba(255,255,255,0.08); margin-top: 7px; }
+  .agent-popover .lease-meter span { background: #ff9f0a; }
+  .popover-primary {
+    width: 100%; height: 26px; margin-top: 8px; border: 0; border-radius: 6px;
+    background: #ff9f0a; color: #3b2600; font-size: 9.5px; font-weight: 700; cursor: pointer;
+  }
+  .popover-primary:hover { background: #ffad2e; }
+  .popover-section { font-size: 8px; font-weight: 700; letter-spacing: 0.09em; color: #858c9c; text-transform: uppercase; margin: 8px 0 3px; }
+  .popover-section:first-child { margin-top: 0; }
+  .menu-row {
+    width: 100%; height: 24px; display: flex; align-items: center; justify-content: space-between;
+    border: 0; background: transparent; color: #dfe3ea; font-size: 9.5px; padding: 0 4px;
+    border-radius: 5px; cursor: pointer; text-align: left;
+  }
+  .menu-row:hover { background: rgba(255,255,255,0.07); }
+  .menu-row .kbd { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.08); color: #c5cbd7; }
+  .menu-state { font-size: 8.5px; color: #9ca2b1; }
+  .menu-state.on { color: #8fe0a5; }
+
+  .device-action-dock {
+    width: 360px; height: 48px; flex: 0 0 48px; display: flex; align-items: center; gap: 2px;
+    padding: 0 6px; background: #242730; border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 14px; box-shadow: 0 14px 36px rgba(0,0,0,0.4);
+  }
+  .action-btn {
+    position: relative; flex: 1; min-width: 0; height: 38px;
+    border: 0; border-radius: 7px; background: transparent; color: #aeb5c4;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2px; font-size: 8px; font-weight: 550; letter-spacing: 0.01em; cursor: pointer;
+  }
+  .action-btn:hover { background: rgba(255,255,255,0.07); color: #fff; }
+  .action-btn:active { transform: scale(0.97); }
+  .action-btn .icon { width: 15px; height: 15px; }
+  .action-btn.active { background: rgba(10,132,255,0.18); color: #8ac4ff; }
+  .action-btn.recording { background: rgba(255,69,58,0.16); color: #ff9f97; }
+  .action-btn.recording .rec-dot { display: block; }
+  .rec-dot {
+    display: none; position: absolute; top: 4px; right: calc(50% - 13px);
+    width: 5px; height: 5px; border-radius: 50%; background: var(--red);
+  }
+  .compact-phone .island { z-index: 3; }
+  .capture-flash {
+    position: absolute; inset: 7px; border-radius: 35px;
+    background: #fff; opacity: 0; pointer-events: none; z-index: 2;
+    transition: opacity 0.1s ease;
+  }
+  .capture-flash.on { opacity: 0.85; }
+
+  /* Clean light floating UI */
+  .device-window-overlay {
+    background: rgba(20, 22, 28, 0.16);
+    backdrop-filter: blur(10px) saturate(120%);
+  }
+  .device-stack { gap: 8px; }
+  .compact-device-window {
+    background: #f5f5f7;
+    border: 1px solid rgba(0,0,0,0.08);
+    box-shadow: 0 30px 80px rgba(20,23,32,0.18), 0 2px 8px rgba(20,23,32,0.06);
+  }
+  .compact-titlebar {
+    background: rgba(250,250,252,0.86);
+    color: #1d1d1f;
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+    backdrop-filter: blur(18px) saturate(180%);
+  }
+  .compact-name { color: #1d1d1f; font-weight: 600; }
+  .compact-runtime { color: #8e8e93; }
+  .live-dot { box-shadow: 0 0 0 2px rgba(47,180,90,0.12); }
+  .agent-pill { border-color: rgba(255,159,10,0.22); background: #fff6e8; color: #9a5b00; }
+  .agent-pill:hover { background: #ffefd6; }
+  .agent-pill .icon { color: #b9853a; }
+  .compact-stage {
+    background: radial-gradient(360px 520px at 50% 38%, #ffffff, #eef0f4 70%, #e9ebf0);
+  }
+  .compact-phone {
+    box-shadow: 0 20px 44px rgba(20,23,32,0.2), inset 0 0 0 1px rgba(255,255,255,0.1);
+  }
+  .device-action-dock {
+    width: 344px; height: 50px; flex-basis: 50px;
+    background: rgba(255,255,255,0.9);
+    border: 1px solid rgba(0,0,0,0.08);
+    box-shadow: 0 14px 34px rgba(20,23,32,0.16), 0 1px 3px rgba(20,23,32,0.06);
+    backdrop-filter: blur(24px) saturate(180%);
+  }
+  .action-btn { color: #6e6e73; font-size: 9.5px; }
+  .action-btn .icon { width: 16px; height: 16px; color: #4a4d55; }
+  .action-btn:hover { background: rgba(0,0,0,0.045); color: #1d1d1f; }
+  .action-btn:hover .icon { color: #1d1d1f; }
+  .action-btn.active { background: rgba(10,132,255,0.12); color: #0a84ff; }
+  .action-btn.active .icon { color: #0a84ff; }
+  .action-btn.recording { background: rgba(255,69,58,0.1); color: #d93a30; }
+  .action-btn.recording .icon { color: #ff453a; }
+  .dock-divider { width: 1px; height: 20px; background: rgba(0,0,0,0.08); margin: 0 2px; flex: 0 0 1px; }
+  .more-btn { flex: 0 0 36px; }
+  .compact-popover {
+    background: #ffffff;
+    border: 1px solid rgba(0,0,0,0.08);
+    box-shadow: 0 18px 50px rgba(20,23,32,0.18), 0 1px 3px rgba(20,23,32,0.06);
+    color: #1d1d1f;
+  }
+  .controls-popover { right: 8px; }
+  .popover-title { color: #8e8e93; }
+  .popover-tag { color: #9a5b00; background: #fff2dd; }
+  .popover-kv span { color: #8e8e93; }
+  .popover-kv b { color: #1d1d1f; }
+  .popover-note { color: #8e8e93; }
+  .agent-popover .lease-meter { background: rgba(0,0,0,0.07); }
+  .agent-popover .lease-meter span { background: #ff9f0a; }
+  .popover-primary { background: #0a84ff; color: #fff; }
+  .popover-primary:hover { background: #0077ed; }
+  .popover-section { color: #8e8e93; }
+  .menu-row { color: #1d1d1f; }
+  .menu-row:hover { background: rgba(0,0,0,0.04); }
+  .menu-row .kbd { background: #f2f2f4; border-color: rgba(0,0,0,0.06); color: #6e6e73; }
+  .menu-state { color: #8e8e93; }
+  .menu-state.on { color: #1f8a46; }
+
   .palette-overlay {
     position: fixed; inset: 0; z-index: 60; display: none;
     align-items: flex-start; justify-content: center; padding-top: 104px;
@@ -1189,36 +1386,66 @@
 </div>
 
 <div class="device-window-overlay" id="deviceWindowOverlay">
-  <div class="floating-device-window" id="floatingDeviceWindow">
-    <div class="dw-titlebar" id="floatingTitlebar">
-      <div class="traffic"><i onclick="closeDeviceWindow()" style="cursor:pointer"></i><i></i><i></i></div>
-      <span class="dw-title">iPhone Air</span>
-      <span class="dw-title-meta">iOS 27.0 · 1260 × 2736</span>
-      <span class="pill green" style="height:21px;font-size:9px"><span class="dot green"></span>Booted</span>
-      <span class="dw-title-spacer"></span>
-      <span class="pill orange" style="height:21px;font-size:9px"><span class="dot orange"></span>agent-42</span>
-      <button class="floating-close" onclick="closeDeviceWindow()" title="Close"><svg class="icon lg"><use href="#i-x"></use></svg></button>
+  <div class="device-stack" id="floatingDeviceWindow">
+    <div class="compact-device-window">
+      <div class="compact-titlebar" id="floatingTitlebar">
+        <div class="traffic"><i onclick="closeDeviceWindow()" style="cursor:pointer"></i><i></i><i></i></div>
+        <div class="compact-title">
+          <span class="compact-name">iPhone Air</span>
+          <span class="compact-runtime">iOS 27.0</span>
+        </div>
+        <span class="live-dot" title="Live screen"></span>
+        <span class="dw-title-spacer"></span>
+        <button class="agent-pill" id="agentPill" onclick="toggleAgentPopover(event)" aria-expanded="false">
+          <span class="dot orange"></span><span id="agentPillText">agent-42</span>
+          <svg class="icon xs"><use href="#i-chevron"></use></svg>
+        </button>
+
+        <div class="compact-popover agent-popover" id="agentPopover">
+          <div class="popover-head">
+            <span class="popover-title">Agent session</span>
+            <span class="popover-tag">control</span>
+          </div>
+          <div class="popover-kv"><span>Client</span><b>MCP · stdio</b></div>
+          <div class="popover-kv"><span>Lease</span><b>3:42 remaining</b></div>
+          <div class="popover-kv"><span>Last action</span><b>ui.tap · 18 ms</b></div>
+          <div class="lease-meter"><span></span></div>
+          <button class="popover-primary" onclick="takeControl()">Take control</button>
+          <div class="popover-note">3-second grace period · audit logged</div>
+        </div>
+      </div>
+      <div class="compact-stage">
+        <div class="compact-phone"><div class="screen"></div><div class="capture-flash" id="captureFlash"></div><div class="island"></div></div>
+      </div>
     </div>
-    <div class="dw-toolbar">
-      <button class="tool" title="Home"><svg class="icon lg"><use href="#i-home"></use></svg></button>
-      <button class="tool" title="Side button"><svg class="icon lg"><use href="#i-side"></use></svg></button>
-      <button class="tool" title="Volume"><svg class="icon lg"><use href="#i-volume"></use></svg></button>
-      <span class="tool-sep"></span>
-      <button class="tool" title="Rotate"><svg class="icon lg"><use href="#i-rotate"></use></svg></button>
-      <button class="tool" title="Screenshot"><svg class="icon lg"><use href="#i-camera"></use></svg></button>
-      <button class="tool active" title="Record"><svg class="icon lg"><use href="#i-record"></use></svg></button>
-      <button class="tool" title="Keyboard"><svg class="icon lg"><use href="#i-keyboard"></use></svg></button>
-      <button class="tool active" title="Gesture input"><svg class="icon lg"><use href="#i-gesture"></use></svg></button>
-      <span class="tool-sep"></span>
-      <button class="tool" title="Quick switch" onclick="openPalette()"><svg class="icon lg"><use href="#i-command"></use></svg></button>
-      <div class="fit-control"><button class="active">Fit</button><button>100%</button></div>
+
+    <div class="device-action-dock">
+      <button class="action-btn" title="Home" onclick="tapAction(this)"><svg class="icon lg"><use href="#i-home"></use></svg><span class="action-label">Home</span></button>
+      <button class="action-btn" title="Capture screenshot" onclick="flashCapture(); tapAction(this)"><svg class="icon lg"><use href="#i-camera"></use></svg><span class="action-label">Capture</span></button>
+      <button class="action-btn" id="recordBtn" title="Record video" onclick="toggleRecord(this)"><svg class="icon lg"><use href="#i-record"></use></svg><span class="action-label">Record</span><span class="rec-dot"></span></button>
+      <button class="action-btn" title="Rotate" onclick="tapAction(this)"><svg class="icon lg"><use href="#i-rotate"></use></svg><span class="action-label">Rotate</span></button>
+      <button class="action-btn" title="Keyboard" onclick="tapAction(this)"><svg class="icon lg"><use href="#i-keyboard"></use></svg><span class="action-label">Keyboard</span></button>
+      <span class="dock-divider"></span>
+      <button class="action-btn more-btn" id="controlsBtn" title="More controls" onclick="toggleControlsPopover(event)" aria-expanded="false"><svg class="icon lg"><use href="#i-more"></use></svg></button>
     </div>
-    <div class="dw-stage">
-      <div class="phone floating-phone"><div class="screen"></div><div class="island"></div></div>
-    </div>
-    <div class="floating-statusbar" id="floatingAgentStatus">
-      <span class="dot orange"></span><b>agent-42</b> is controlling · <button class="link-btn" onclick="takeControl()">Take control</button>
-      <span class="spacer"></span><span class="kbd">⌘K</span> switch
+
+    <div class="compact-popover controls-popover" id="controlsPopover">
+      <div class="popover-section">Input</div>
+      <button class="menu-row"><span>Gesture input</span><span class="menu-state on">on</span></button>
+      <button class="menu-row"><span>Keyboard</span><span class="kbd">⌘⇧K</span></button>
+      <div class="popover-section">Capture</div>
+      <button class="menu-row"><span>Screenshot</span><span class="kbd">⌘⇧S</span></button>
+      <button class="menu-row"><span>Record video</span><span class="kbd">⌘R</span></button>
+      <div class="popover-section">Device</div>
+      <button class="menu-row"><span>Home</span><span class="kbd">⌘⇧H</span></button>
+      <button class="menu-row"><span>Lock</span><span class="kbd">⌘L</span></button>
+      <button class="menu-row"><span>Rotate left</span><span class="kbd">⌘←</span></button>
+      <button class="menu-row"><span>Rotate right</span><span class="kbd">⌘→</span></button>
+      <button class="menu-row"><span>Volume up</span><span class="kbd">⌘⇧↑</span></button>
+      <button class="menu-row"><span>Volume down</span><span class="kbd">⌘⇧↓</span></button>
+      <div class="popover-section">Window</div>
+      <button class="menu-row"><span>Actual size</span><span class="menu-state">fit</span></button>
+      <button class="menu-row" onclick="closePopovers(); openPalette()"><span>Quick switch</span><span class="kbd">⌘K</span></button>
     </div>
   </div>
 </div>
@@ -1297,11 +1524,69 @@
     win.style.left = "50%";
     win.style.top = "50%";
     win.style.transform = "translate(-50%, -50%)";
+    closePopovers();
     document.getElementById("deviceWindowOverlay").classList.add("open");
   }
 
   function closeDeviceWindow() {
+    closePopovers();
     document.getElementById("deviceWindowOverlay").classList.remove("open");
+  }
+
+  function closePopovers() {
+    const agent = document.getElementById("agentPopover");
+    const controls = document.getElementById("controlsPopover");
+    if (agent) agent.classList.remove("open");
+    if (controls) controls.classList.remove("open");
+    const agentPill = document.getElementById("agentPill");
+    const controlsBtn = document.getElementById("controlsBtn");
+    if (agentPill) agentPill.setAttribute("aria-expanded", "false");
+    if (controlsBtn) controlsBtn.setAttribute("aria-expanded", "false");
+  }
+
+  function toggleAgentPopover(event) {
+    event.stopPropagation();
+    const popover = document.getElementById("agentPopover");
+    const shouldOpen = !popover.classList.contains("open");
+    closePopovers();
+    if (shouldOpen) {
+      popover.classList.add("open");
+      document.getElementById("agentPill").setAttribute("aria-expanded", "true");
+    }
+  }
+
+  function toggleControlsPopover(event) {
+    event.stopPropagation();
+    const popover = document.getElementById("controlsPopover");
+    const shouldOpen = !popover.classList.contains("open");
+    closePopovers();
+    if (shouldOpen) {
+      popover.classList.add("open");
+      document.getElementById("controlsBtn").setAttribute("aria-expanded", "true");
+    }
+  }
+
+  function tapAction(btn) {
+    btn.classList.add("active");
+    setTimeout(() => btn.classList.remove("active"), 180);
+  }
+
+  function flashCapture() {
+    const flash = document.getElementById("captureFlash");
+    if (!flash) return;
+    flash.classList.add("on");
+    setTimeout(() => flash.classList.remove("on"), 120);
+  }
+
+  function toggleRecord(btn) {
+    const recording = btn.classList.toggle("recording");
+    const label = btn.querySelector(".action-label");
+    if (label) label.textContent = recording ? "Stop" : "Record";
+    const live = document.querySelector(".live-dot");
+    if (live) {
+      live.style.background = recording ? "var(--red)" : "";
+      live.style.boxShadow = recording ? "0 0 0 3px rgba(255,69,58,0.14)" : "";
+    }
   }
 
   function openPalette() {
@@ -1334,10 +1619,15 @@
       banner.innerHTML = '<span class="agent-avatar" style="background:#2fb45a;color:#063b17">YOU</span><span class="banner-copy"><b>You</b> have control<br>agent-42 is revoked</span><button class="banner-btn" style="background:#9ee7b1;color:#0b4420" onclick="takeControl()">Release</button>';
     }
     document.querySelectorAll(".pill.orange").forEach(p => { if (p.textContent.includes("agent")) { p.className = "pill green"; p.innerHTML = '<span class="dot green"></span>you'; } });
-    const floating = document.getElementById("floatingAgentStatus");
-    if (floating) {
-      floating.innerHTML = '<span class="dot green"></span><b>You</b> have control · agent-42 revoked <span class="spacer"></span><span class="kbd">⌘K</span> switch';
+    const pill = document.getElementById("agentPill");
+    if (pill) {
+      pill.style.borderColor = "rgba(47,180,90,0.32)";
+      pill.style.background = "rgba(47,180,90,0.12)";
+      pill.style.color = "#b9f0c8";
     }
+    const pillText = document.getElementById("agentPillText");
+    if (pillText) pillText.textContent = "you";
+    closePopovers();
   }
 
   function selectStorage(row) {
@@ -1352,9 +1642,18 @@
   document.addEventListener("keydown", (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
       e.preventDefault();
+      closePopovers();
       openPalette();
     }
-    if (e.key === "Escape") { closePalette(); closeDeviceWindow(); }
+    if (e.key === "Escape") {
+      if (document.querySelector(".compact-popover.open")) { closePopovers(); return; }
+      if (document.getElementById("palette").classList.contains("open")) { closePalette(); return; }
+      closeDeviceWindow();
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".compact-titlebar") && !e.target.closest(".compact-popover")) closePopovers();
   });
 
   (function enableWindowDrag() {
@@ -1362,7 +1661,7 @@
     const bar = document.getElementById("floatingTitlebar");
     let dragging = false, startX = 0, startY = 0, originLeft = 0, originTop = 0;
     bar.addEventListener("pointerdown", (e) => {
-      if (e.target.closest("button")) return;
+      if (e.target.closest("button") || e.target.closest(".compact-popover")) return;
       const rect = win.getBoundingClientRect();
       win.style.transform = "none";
       win.style.left = rect.left + "px";
