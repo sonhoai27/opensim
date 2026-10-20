@@ -76,7 +76,7 @@ Mục tiêu của OpenSim là công cụ local, open-source, agent-first: một 
   - `pid`, `port`, `token`, `version`, `xcodeVersion`, `startedAt`.
 - CLI, MCP và app đọc state file để kết nối. Nếu daemon chưa chạy, CLI/app auto-start và chờ health check tối đa 5 giây.
 - Đóng app không làm chết daemon; agent đang chạy tiếp tục làm việc.
-- App render screen **in-process** bằng `SimDisplayView`; app không stream frame qua daemon.
+- App render screen **in-process** bằng IOSurface lấy từ `SimDeviceScreen(screenID:).screen.framebufferSurface`; `SimDisplayView` chỉ là NSView host nếu selector còn. App không stream frame qua daemon.
 - App lấy lifecycle/lease/audit qua daemon; input của người dùng được gửi trực tiếp bằng Bridge sau khi app giữ lease `control`.
 - CLI/MCP thao tác input qua daemon; daemon dùng Bridge để inject HID.
 - Nếu daemon chết, app hiển thị trạng thái mất kết nối và có nút restart; device đang boot vẫn tiếp tục ở CoreSimulator.
@@ -102,14 +102,16 @@ Mọi private API nằm trong `OpenSimBridge`. Không target nào khác được
 | Nhu cầu | Đường chính | Fallback | Mức rủi ro |
 |---|---|---|---|
 | Device list/lifecycle | CoreSimulator ObjC (`SimServiceContext`, `SimDeviceSet`, `SimDevice`) | `simctl` | Thấp |
-| Screenshot/video | `simctl io` | `SimDeviceScreen.unmaskedSurface` | Thấp |
-| Live screen | `SimulatorKit.SimDisplayView` + `SimDeviceScreen` | IOSurface + view tự dựng, cuối cùng là screenshot polling | Cao |
-| Tap/swipe/type/button | `SimDisplayView` digitizer; `IndigoHIDMessageFor*` + `SimDeviceLegacyHIDClient` | XCUITest helper (chậm, chỉ dùng khi HID fail) | Cao |
-| Accessibility tree | `SimulatorKit.SimAccessibilityManager` | XCUITest helper trong plan 2 | Rất cao |
+| Screenshot/video | `simctl io` | `SimDeviceScreen.screen.framebufferSurface` | Thấp |
+| Live screen | `SimDeviceScreen(screenID: 1).screen.framebufferSurface` → IOSurface; app host NSView | screenshot polling; `SimDisplayView.connectedScreen`/`pixelSize` không có trên Xcode 27.1 | Cao |
+| Tap/swipe/type/button | `SimDeviceLegacyHIDClient` + `IndigoHIDMessageForMouseNSEvent`/`IndigoHIDMessageForKeyboardNSEvent` (target mapping cần xác minh) | XCUITest helper (chậm, chỉ dùng khi HID fail) | Cao |
+| Accessibility tree | XCUITest helper (Plan 2) | Không có private tree getter; `SimAccessibilityManager` chỉ có add/translation callback | Rất cao |
 | Runtime install/delete | `simctl runtime add/delete`; `xcodebuild -downloadPlatform/-importPlatform` cho download/import | CoreSimulator ObjC | Thấp |
 | Android lifecycle/app/log | `emulator`, `adb`, `avdmanager` | Không có private API | Thấp |
 | Android live screen/input | Emulator gRPC `EmulatorController` | `adb exec-out screencap` + `adb shell input` | Trung bình |
 | Android accessibility | `adb shell uiautomator dump` | Không có fallback đọc tree; trả `a11y_unavailable` | Thấp |
+
+Plan 0 (chạy 2026-10-20) xác nhận `SimDisplayView` không expose `connectedScreen`/`pixelSize`/`unmaskedSurface`; render private khả dụng qua `SimDeviceScreen(screenID: 1).screen.framebufferSurface` (IOSurface 1260×2736). Input event trực tiếp và a11y tree private chưa đạt; Plan 2 dùng XCUITest helper cho input/a11y cho đến khi HID target mapping được xác minh. Báo cáo: `docs/superpowers/spikes/2026-10-19-private-api-spike.md`.
 | Log | `simctl spawn booted log stream` | file log trong device data | Thấp |
 
 Nguyên tắc:
@@ -431,7 +433,7 @@ Mọi lỗi có `retryable` và `recovery` để agent quyết định bước t
 
 ### 9.2 Cửa sổ device
 
-- `SimDisplayView` render trực tiếp trong `NSViewRepresentable`, bên trong `WindowGroup` native; titlebar, traffic lights, material và shadow do macOS cung cấp.
+- App host IOSurface từ `SimDeviceScreen(screenID:).screen.framebufferSurface` trong `NSView`/`NSViewRepresentable`, bên trong `WindowGroup` native; `SimDisplayView` chỉ dùng làm host nếu selector còn. Titlebar, traffic lights, material và shadow do macOS cung cấp.
 - Primary action luôn thấy: Home, Capture, Record, Rotate, Keyboard trong bottom bar native (`ControlGroup` + `safeAreaInset(edge: .bottom)`, `.background(.bar)`). Lock/Volume/Side/Zoom/Gesture nằm trong `Menu` More. Mỗi action dùng `Label`/SF Symbol và `.help`.
 - Agent status là `Menu`/`Label` trong titlebar, hiển thị lease và Take control; không pill tự tô màu, không inspector agent trong cửa sổ, không status bar thường trú.
 - Gesture: tap, long-press, swipe, drag, pinch, rotate, multi-touch; bàn phím Mac ánh xạ vào simulator; paste hai chiều.
