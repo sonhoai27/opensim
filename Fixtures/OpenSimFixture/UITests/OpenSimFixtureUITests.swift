@@ -77,7 +77,12 @@ final class OpenSimFixtureUITests: XCTestCase {
         case "typeText":
             app.typeText(request.text ?? "")
             return HelperResponse(ok: true, error: nil, node: nil)
-        case "swipe", "drag":
+        case "swipe":
+            let from = coordinate(app, x: request.fromX ?? 0, y: request.fromY ?? 0)
+            let to = coordinate(app, x: request.toX ?? 0, y: request.toY ?? 0)
+            from.press(forDuration: 0.01, thenDragTo: to, withVelocity: 1_000, thenHoldForDuration: 0)
+            return HelperResponse(ok: true, error: nil, node: nil)
+        case "drag":
             let from = coordinate(app, x: request.fromX ?? 0, y: request.fromY ?? 0)
             let to = coordinate(app, x: request.toX ?? 0, y: request.toY ?? 0)
             from.press(forDuration: seconds(request.durationMs), thenDragTo: to)

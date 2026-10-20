@@ -132,6 +132,7 @@ final class FixtureViewController: UIViewController {
         let rightSwipe = UISwipeGestureRecognizer(target: self, action: #selector(swipedRight))
         rightSwipe.direction = .right
         swipeArea.addGestureRecognizer(rightSwipe)
+        swipeArea.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(panned)))
         stack.addArrangedSubview(swipeArea)
 
         let canvas = makeGestureContainer(
@@ -242,6 +243,13 @@ final class FixtureViewController: UIViewController {
 
     @objc private func swipedRight(_ gesture: UISwipeGestureRecognizer) {
         gestureLabel.text = "gesture=swipe-right"
+    }
+
+    @objc private func panned(_ gesture: UIPanGestureRecognizer) {
+        guard gesture.state == .ended else { return }
+        let dx = gesture.translation(in: gesture.view).x
+        guard abs(dx) > 20 else { return }
+        gestureLabel.text = dx < 0 ? "gesture=swipe-left" : "gesture=swipe-right"
     }
 
     @objc private func pinched(_ gesture: UIPinchGestureRecognizer) {

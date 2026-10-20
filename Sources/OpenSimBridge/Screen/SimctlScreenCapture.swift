@@ -46,13 +46,14 @@ public struct SimctlScreenCapture: Sendable {
         }
         let deviceInfo = try await devices.device(device)
         let profile = try await profiles.profile(for: deviceInfo.deviceType)
+        let mainIndex = descriptors.firstIndex(where: { $0.displayClass == 0 }) ?? 0
         return descriptors.enumerated().map { index, descriptor in
             ScreenInfo(
                 id: UInt32(index + 1),
                 width: descriptor.width,
                 height: descriptor.height,
-                scale: index == 0 ? profile.scale : 1,
-                rotation: index == 0 ? profile.orientation : 0,
+                scale: index == mainIndex ? profile.scale : 1,
+                rotation: index == mainIndex ? profile.orientation : 0,
                 displayClass: descriptor.displayClass
             )
         }
