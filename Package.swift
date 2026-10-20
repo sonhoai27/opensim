@@ -58,6 +58,7 @@ let package = Package(
                 "OpenSimBridge",
                 "OpenSimProtocol",
                 "OpenSimDaemon",
+                "OpenSimMCP",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ]
         ),

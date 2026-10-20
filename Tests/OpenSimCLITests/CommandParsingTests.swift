@@ -57,8 +57,15 @@ final class CommandParsingTests: XCTestCase {
         let names = OpenSimCommand.configuration.subcommands.map { $0.configuration.commandName }
         XCTAssertEqual(
             Set(names),
-            Set(["device", "runtime", "app", "ui", "log", "doctor", "daemon", "session"])
+            Set(["device", "runtime", "app", "ui", "log", "doctor", "daemon", "session", "mcp"])
         )
+    }
+
+    func testParsesMCPStdio() throws {
+        let command = try OpenSimCommand.parseAsRoot(["mcp", "--stdio"])
+        let mcp = try XCTUnwrap(command as? MCPCommand)
+        XCTAssertTrue(mcp.stdio)
+        XCTAssertFalse(mcp.http)
     }
 
     func testParsesDirectAndSessionOptions() throws {

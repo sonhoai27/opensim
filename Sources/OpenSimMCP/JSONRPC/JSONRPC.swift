@@ -73,6 +73,20 @@ public struct JSONRPCResponse: Codable, Sendable, Equatable {
         self.result = result
         self.error = error
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case jsonrpc, id, result, error
+    }
+
+    /// JSON-RPC requires `"id": null` on responses whose request id could not be determined, so
+    /// the key is written explicitly instead of relying on `encodeIfPresent`.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(jsonrpc, forKey: .jsonrpc)
+        try container.encode(id ?? .null, forKey: .id)
+        try container.encodeIfPresent(result, forKey: .result)
+        try container.encodeIfPresent(error, forKey: .error)
+    }
 }
 
 public enum JSONRPCErrorCode {
