@@ -4,7 +4,7 @@
 
 **Goal:** Điền `screen`, `input`, `accessibility` vào `SimulatorBridge` của Plan 1; thêm CLI `ui` để screenshot, record, đọc UI tree, find, tap theo selector, type, gesture và batch `act`; tạo fixture iOS có identifier ổn định; tạo `OpenSimBridgeUI.SimulatorScreenView` với API cố định cho Plan 4; xử lý private API bằng capability gate và fallback đã định trong spec.
 
-**Architecture:** `OpenSimCore` thêm selector parser, point parser, automation DTO và catalog `ui`. `OpenSimBridge` có ba lớp: `SimctlScreenService` cho screenshot/record/screen info qua `simctl`; `DisplaySurface` cho render với ba backend (`SimDisplayView`, IOSurface, screenshot polling); input qua `SimDisplayView` digitizer với `NSEvent`, fallback XCUITest; accessibility qua `SimAccessibilityManager`, fallback XCUITest helper. `SimctlBridge.live` chọn backend bằng `Plan2CapabilityGate`, trả service tương ứng hoặc `nil`. `OpenSimCLI` thêm nhóm `ui`, dùng `OperationCatalog.plan2()`, `BridgeOperationExecutor` và `UIAutomationService`. `OpenSimBridgeUI` chỉ bọc `DisplaySurface`, không gọi private API.
+**Architecture:** `OpenSimCore` thêm selector parser, point parser, automation DTO và catalog `ui`. `OpenSimBridge` có ba lớp: `SimctlScreenService` cho screenshot/record/screen info qua `simctl`; `FramebufferDisplaySurface` render IOSurface lấy từ `SimDeviceScreen(screenID: 1).screen.framebufferSurface`; input và accessibility qua XCUITest helper, screenshot polling là fallback render. `SimctlBridge.live` chọn backend bằng `Plan2CapabilityGate`, trả service tương ứng hoặc `nil`. `OpenSimCLI` thêm nhóm `ui`, dùng `OperationCatalog.plan2()`, `BridgeOperationExecutor` và `UIAutomationService`. `OpenSimBridgeUI` chỉ bọc `DisplaySurface`, không gọi private API.
 
 **Tech Stack:** Swift 6 language mode, SwiftPM, AppKit, CoreGraphics/ImageIO, IOSurface, XCTest/XCUITest, `xcrun simctl`, XcodeGen cho fixture, macOS 27.0+, Xcode 27.1, arm64.
 
@@ -14,8 +14,8 @@
 
 - macOS 27.0+; arm64; Xcode 27.1 là bản chính; yêu cầu full Xcode.
 - Swift 6 language mode; package `OpenSim`; CLI `opensim`; fixture bundle ID `dev.opensim.fixture`.
-- Plan 0 **chưa chạy**. Không giả định private API hoạt động. Mọi private API đi qua `Plan2CapabilityGate`; gate không đạt thì dùng fallback trong spec hoặc trả `capability_unavailable`.
-- Danh sách API private đóng: class `SimulatorKit.SimDisplayView`, `SimulatorKit.SimDeviceScreen`, `SimulatorKit.SimDeviceLegacyHIDClient`, `SimulatorKit.SimAccessibilityManager`, `SimServiceContext`, `SimDeviceSet`, `SimDevice`; selector `sharedServiceContextForDeveloperDir:error:`, `defaultDeviceSetWithError:`, `devices`, `UDID`, `name`, `stateString`, `state`, `setDevice:`, `connectedScreen`, `pixelSize`, `unmaskedSurface`, `initWithFrame:`, `initWithDevice:screenID:`, `rootElement`, `accessibilityElement`, `accessibilityTree`, `snapshot`, `elements`, `elementAtPoint:`; symbol prefix `IndigoHIDMessageFor`, symbol cụ thể `IndigoHIDMessageForKeyboardNSEvent`. Không bịa selector mới.
+- Plan 0 **đã chạy** (report `docs/superpowers/spikes/2026-10-19-private-api-spike.md`). Mọi private API đi qua `Plan2CapabilityGate`; gate không đạt thì dùng fallback hoặc trả `capability_unavailable`.
+- Danh sách API private đóng: class `SimulatorKit.SimDeviceScreen`, `SimServiceContext`, `SimDeviceSet`, `SimDevice`; selector `sharedServiceContextForDeveloperDir:error:`, `defaultDeviceSetWithError:`, `devices`, `UDID`, `name`, `stateString`, `state`, `initWithDevice:screenID:`, `screen`, `framebufferSurface`, `maskedFramebufferSurface`, `displaySize`. `SimDisplayView`/`SimAccessibilityManager` và getter tree không còn trong đường primary. Symbol `IndigoHIDMessageFor*` chỉ dùng khi target mapping được xác minh; Plan 2 không đoán `IndigoHIDTarget`.
 - Không thêm daemon, MCP, app UI, storage, performance, session/lease. `OpenSimBridgeUI` chỉ là view wrapper cho Plan 4.
 - Mọi process dùng `Process` với argument array; không shell string. Không Chrome, không tải runtime, không lệnh destructive.
 - Screenshot CLI mặc định ghi file. `Screenshot.scale` là hệ số resize so với pixel gốc; chấp nhận `0.1` đến `4.0`.
@@ -25,24 +25,27 @@
 - Mỗi task có check đỏ, implement, check xanh, commit. Không chạy commit trong lúc viết plan.
 - Văn xuôi tiếng Việt; code/identifier/command tiếng Anh; không ký tự CJK.
 
-## Decision Gate Khi Plan 0 Chưa Chạy
+## Plan 0 Result — Backend Decisions (2026-10-20)
 
-Gate là Task 6, chạy `Plan2CapabilityGate` trên máy thật và ghi evidence vào `docs/superpowers/spikes/2026-10-20-plan2-capability-gate.md`. Không dùng report Plan 0 làm nguồn duy nhất; nếu `docs/superpowers/spikes/2026-10-19-private-api-spike.md` tồn tại, chỉ copy dòng PASS/FAIL/UNAVAILABLE kèm evidence.
+Plan 0 đã chạy trên iPhone Air/iOS 27.0; report đầy đủ ở `docs/superpowers/spikes/2026-10-19-private-api-spike.md`. Kết quả dưới đây là nguồn quyết định; Task 6 gate chỉ xác nhận lại capability trên máy đích.
 
-| Kết quả gate | Render | Input | Accessibility | Task |
-|---|---|---|---|---|
-| Primary | `SimDisplayView` + `setDevice:` + `connectedScreen` + `pixelSize` | `SimDisplayView` digitizer qua `NSEvent` | `SimAccessibilityManager` + getter trả tree | 7, 8, 11 |
-| Fallback A | `SimDeviceScreen.unmaskedSurface` + custom `NSView`/`CALayer` | XCUITest helper | XCUITest helper | 9, 10 |
-| Fallback B | `simctl io screenshot` polling 10 fps | XCUITest helper | XCUITest helper | 10 |
-| Không đạt | screenshot polling | `nil` | `nil` | 12 trả `capability_unavailable` |
+| Khả năng | Kết quả Plan 0 | Backend Plan 2 | Task |
+|---|---|---|---|
+| Render | PASS | `SimDeviceScreen(screenID: 1).screen.framebufferSurface` → IOSurface, host NSView | 9 |
+| `SimDisplayView` direct | FAIL | Retire: không có `connectedScreen`/`pixelSize`/`unmaskedSurface`; view capture đen | 7 retired |
+| Input | BLOCKED | XCUITest helper primary; `SimDisplayView` digitizer retired; HID target mapping follow-up | 10, 8 retired |
+| Accessibility | UNAVAILABLE | XCUITest helper primary; `SimAccessibilityManager` không có tree getter | 10, 11 retired |
+| Screenshot/video | PASS | `simctl io` | 4, 5 |
+| watchOS/tvOS | BLOCKED | runtime missing; Plan 6 | — |
 
 Quy tắc:
 
-1. `render`: ưu tiên `simDisplayView`; thiếu class/selector thì `ioSurface`; thiếu `unmaskedSurface` hoặc device lookup thì `screenshotPolling`.
-2. `input`: `simulatorKit` nếu `SimDisplayView` + `setDevice:` khả dụng; ngược lại `xcuiTest` nếu helper cấu hình được; ngược lại `unavailable`.
-3. `accessibility`: `simAccessibilityManager` nếu class tồn tại và ít nhất một getter trong danh sách đóng phản hồi; ngược lại `xcuiTest`; ngược lại `unavailable`.
-4. `multiTouch` và `hardwareButtons` mặc định `unknown`; chỉ `available` sau khi gate probe chạy `pinch`/`rotate`/`home` trên fixture và ghi bằng chứng. Khi `unknown`/`unavailable`, thao tác đó trả `capability_unavailable` và dùng fallback nếu có.
-5. IndigoHID chỉ được bind khi Plan 0 report hoặc gate probe cung cấp call shape đã xác minh. Nếu không, Plan 2 dùng digitizer và fallback, không đoán signature.
+1. `render`: ưu tiên `framebufferSurface`; thiếu class/selector hoặc surface nil thì screenshot polling 10 fps.
+2. `input`: `xcuiTest` nếu helper cấu hình được; ngược lại `unavailable`. Không dùng `ViewEventInputService` làm primary.
+3. `accessibility`: `xcuiTest`; private tree trả `a11y_unavailable`, không suy diễn từ `SimAccessibilityManager`.
+4. `multiTouch` và `hardwareButtons` chỉ `available` sau khi XCUITest helper chạy `pinch`/`rotate`/`home` trên fixture; gate xác nhận.
+5. `FramebufferDisplaySurface` đọc lại `displaySize`/surface mỗi frame; frame stream giới hạn `.bufferingNewest(1)`.
+6. Task 7, 8, 11 bị **retire**: không implement code trong các section đó. Task 9 là primary render; Task 10 là primary input/a11y.
 
 ## File Structure
 
@@ -70,19 +73,16 @@ Quy tắc:
 | `Sources/OpenSimBridge/Private/CoreSimulatorDeviceLookup.swift` | `SimDevice` object bằng selector Plan 0 |
 | `Sources/OpenSimBridge/Capabilities/Plan2CapabilityGate.swift` | chọn backend |
 | `Sources/OpenSimBridge/Screen/DisplaySurface.swift` | protocol surface |
-| `Sources/OpenSimBridge/Screen/SimDisplaySurface.swift` | primary render |
-| `Sources/OpenSimBridge/Screen/IOSurfaceDisplaySurface.swift` | fallback A |
-| `Sources/OpenSimBridge/Screen/ScreenshotPollingSurface.swift` | fallback B render |
-| `Sources/OpenSimBridge/Input/InputGesturePlanner.swift` | sample gesture |
+| `Sources/OpenSimBridge/Screen/FramebufferDisplaySurface.swift` | primary render từ `framebufferSurface` |
+| `Sources/OpenSimBridge/Screen/ScreenshotPollingSurface.swift` | fallback render |
+| `Sources/OpenSimBridge/Input/InputGesturePlanner.swift` | sample gesture cho XCUITest |
 | `Sources/OpenSimBridge/Input/KeyboardMap.swift` | keyCode và modifier |
-| `Sources/OpenSimBridge/Input/ViewEventInputService.swift` | input qua digitizer |
-| `Sources/OpenSimBridge/Input/CompositeInputService.swift` | route primary/fallback |
+| `Sources/OpenSimBridge/Input/CompositeInputService.swift` | route XCUITest/fallback |
 | `Sources/OpenSimBridge/Accessibility/UIElementTreeBuilder.swift` | object tree sang `UIElement` |
-| `Sources/OpenSimBridge/Accessibility/SimAccessibilityService.swift` | primary a11y |
 | `Sources/OpenSimBridge/XCUITest/XCUITestSnapshotMapper.swift` | map snapshot JSON |
 | `Sources/OpenSimBridge/XCUITest/XCUITestHelperRunner.swift` | chạy helper test |
-| `Sources/OpenSimBridge/Services/XCUITestAccessibilityService.swift` | fallback a11y |
-| `Sources/OpenSimBridge/Services/XCUITestInputService.swift` | fallback input |
+| `Sources/OpenSimBridge/Services/XCUITestAccessibilityService.swift` | primary a11y |
+| `Sources/OpenSimBridge/Services/XCUITestInputService.swift` | primary input |
 | `Sources/OpenSimBridge/Services/UIAutomationService.swift` | tap selector, wait, act |
 | `Sources/OpenSimBridge/Operations/BridgeOperationExecutor.swift` | case `screen_*`, `ui_*` |
 | `Sources/OpenSimBridge/SimctlBridge.swift` | điền optional service |
@@ -138,7 +138,7 @@ import XCTest
 
 final class Plan2CatalogTests: XCTestCase {
     func testPlan1IsUnchanged() {
-        XCTAssertEqual(OperationCatalog.plan1().mcpOperations().count, 22)
+        XCTAssertEqual(OperationCatalog.plan1().mcpOperations().count, 23)
     }
 
     func testPlan2AddsEveryUIOperation() throws {
@@ -947,7 +947,9 @@ git commit -m "feat(bridge): add plan 2 capability gate"
 
 ---
 
-### Task 7: `DisplaySurface` primary, gesture planner và keyboard map
+### Task 7 (RETIRED — Plan 0 override): `DisplaySurface` primary, gesture planner và keyboard map
+
+> Không implement section này. `SimDisplayView.connectedScreen`/`pixelSize`/`unmaskedSurface` không tồn tại trên Xcode 27.1; dùng Task 9. Giữ `InputGesturePlanner`/`KeyboardMap` nếu Task 10 cần, nhưng không dùng digitizer làm primary.
 
 **Files:**
 - Create: `Sources/OpenSimBridge/Screen/DisplaySurface.swift`, `Sources/OpenSimBridge/Screen/SimDisplaySurface.swift`, `Sources/OpenSimBridge/Input/InputGesturePlanner.swift`, `Sources/OpenSimBridge/Input/KeyboardMap.swift`
@@ -1061,7 +1063,9 @@ git commit -m "feat(bridge): add display surface and input primitives"
 
 ---
 
-### Task 8: Primary input qua digitizer và composite routing
+### Task 8 (RETIRED — Plan 0 override): Primary input qua digitizer và composite routing
+
+> Không implement section này. `NSApp`/`mouseDown` trên `SimDisplayView` không tới device trong Plan 0; HID target chưa xác minh. Dùng XCUITest helper ở Task 10.
 
 **Files:**
 - Create: `Sources/OpenSimBridge/Input/ViewEventInputService.swift`, `Sources/OpenSimBridge/Input/CompositeInputService.swift`
@@ -1165,7 +1169,9 @@ git commit -m "feat(bridge): add digitizer input and composite routing"
 
 ---
 
-### Task 9: Fallback A — IOSurface display
+### Task 9: Framebuffer display surface (primary — Plan 0 override)
+
+> Plan 0: dùng `SimDeviceScreen(screenID: 1).screen.framebufferSurface` (IOSurface), không dùng `SimDisplayView`/`unmaskedSurface`. Nội dung code bên dưới được cập nhật theo hướng này trước khi implement.
 
 **Files:**
 - Create: `Sources/OpenSimBridge/Screen/IOSurfaceDisplaySurface.swift`
@@ -1337,7 +1343,9 @@ git commit -m "feat(bridge): add screenshot polling and xcuitest fallback"
 
 ---
 
-### Task 11: Primary accessibility qua `SimAccessibilityManager`
+### Task 11 (RETIRED — Plan 0 override): Primary accessibility qua `SimAccessibilityManager`
+
+> Không implement section này. Plan 0 xác nhận `accessibilityChildren=nil` và không có tree getter; dùng XCUITest helper ở Task 10.
 
 **Files:**
 - Create: `Sources/OpenSimBridge/Accessibility/UIElementTreeBuilder.swift`, `Sources/OpenSimBridge/Accessibility/SimAccessibilityService.swift`
