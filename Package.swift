@@ -9,17 +9,32 @@ let package = Package(
         .library(name: "OpenSimBridge", targets: ["OpenSimBridge"]),
         .library(name: "OpenSimBridgeUI", targets: ["OpenSimBridgeUI"]),
         .library(name: "OpenSimProtocol", targets: ["OpenSimProtocol"]),
+        .library(name: "OpenSimDaemon", targets: ["OpenSimDaemon"]),
         .executable(name: "opensim", targets: ["OpenSimCLI"]),
         .executable(name: "OpenSimPreview", targets: ["OpenSimPreview"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
+        .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.0.0"),
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.60.0"),
     ],
     targets: [
         .target(name: "OpenSimCore"),
         .target(name: "OpenSimBridge", dependencies: ["OpenSimCore"]),
         .target(name: "OpenSimBridgeUI", dependencies: ["OpenSimCore", "OpenSimBridge"]),
         .target(name: "OpenSimProtocol", dependencies: ["OpenSimCore"]),
+        .target(
+            name: "OpenSimDaemon",
+            dependencies: [
+                "OpenSimCore",
+                "OpenSimBridge",
+                "OpenSimProtocol",
+                .product(name: "Hummingbird", package: "hummingbird"),
+                .product(name: "Logging", package: "swift-log"),
+                .product(name: "NIOCore", package: "swift-nio"),
+            ]
+        ),
         .executableTarget(
             name: "OpenSimPreview",
             dependencies: ["OpenSimCore", "OpenSimBridge", "OpenSimBridgeUI"]
@@ -34,6 +49,16 @@ let package = Package(
         ),
         .testTarget(name: "OpenSimCoreTests", dependencies: ["OpenSimCore"]),
         .testTarget(name: "OpenSimProtocolTests", dependencies: ["OpenSimProtocol", "OpenSimCore"]),
+        .testTarget(
+            name: "OpenSimDaemonTests",
+            dependencies: [
+                "OpenSimDaemon",
+                "OpenSimBridge",
+                "OpenSimProtocol",
+                "OpenSimCore",
+                .product(name: "Logging", package: "swift-log"),
+            ]
+        ),
         .testTarget(name: "OpenSimBridgeTests", dependencies: ["OpenSimBridge", "OpenSimCore"]),
         .testTarget(
             name: "OpenSimBridgeUITests",
