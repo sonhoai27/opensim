@@ -38,9 +38,14 @@ public final class SimulatorScreenView: NSView {
             let surface = try bridge.makeDisplaySurface(for: device)
             surface.onSizeChange = { [weak self] size in self?.update(size) }
             surface.onError = { [weak self] error in self?.onError?(error) }
-            try await surface.connect()
-            self.surface = surface
             rotationContainer.addSubview(surface.view)
+            do {
+                try await surface.connect()
+            } catch {
+                surface.view.removeFromSuperview()
+                throw error
+            }
+            self.surface = surface
             update(surface.pixelSize)
             needsLayout = true
         } catch let error as OpenSimError {

@@ -16,7 +16,8 @@ public final class IOSurfaceDisplaySurface: DisplaySurface {
 
     private var screenObject: AnyObject?
     private var framebufferSurface: IOSurface?
-    private var refreshTask: Task<Void, Never>?
+    private var displayLink: CADisplayLink?
+    private var fallbackRefreshTask: Task<Void, Never>?
     private var isConnected = false
     private var consecutiveFailures = 0
     private let screenScaleProvider: (@Sendable (DeviceID) async -> CGFloat)?
@@ -86,8 +87,10 @@ public final class IOSurfaceDisplaySurface: DisplaySurface {
 
     public func disconnect() {
         isConnected = false
-        refreshTask?.cancel()
-        refreshTask = nil
+        displayLink?.invalidate()
+        displayLink = nil
+        fallbackRefreshTask?.cancel()
+        fallbackRefreshTask = nil
         view.layer?.contents = nil
         framebufferSurface = nil
         screenObject = nil
@@ -102,9 +105,15 @@ public final class IOSurfaceDisplaySurface: DisplaySurface {
     }
 
     private func startRefresh() {
-        refreshTask = Task { @MainActor [weak self] in
+        if view.window != nil {
+            let link = view.displayLink(target: self, selector: #selector(displayTick(_:)))
+            link.add(to: .main, forMode: .common)
+            displayLink = link
+            return
+        }
+        fallbackRefreshTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(33))
+                try? await Task.sleep(for: .milliseconds(16))
                 guard let self, self.isConnected else { return }
                 do {
                     try self.updateSurface()
@@ -117,6 +126,20 @@ public final class IOSurfaceDisplaySurface: DisplaySurface {
                         return
                     }
                 }
+            }
+        }
+    }
+
+    @objc private func displayTick(_ link: CADisplayLink) {
+        guard isConnected else { return }
+        do {
+            try updateSurface()
+            consecutiveFailures = 0
+        } catch {
+            consecutiveFailures += 1
+            if consecutiveFailures >= 10 {
+                onError?(error as? OpenSimError ?? surfaceError("\(error)"))
+                disconnect()
             }
         }
     }
