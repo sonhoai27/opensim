@@ -23,7 +23,7 @@ public enum CapabilityEvaluator {
                 render = .unknown
             }
             switch plan2.input {
-            case .simulatorKit:
+            case .dtuhid, .simulatorKit:
                 hid = .available
             case .xcuiTest:
                 hid = .unknown

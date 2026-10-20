@@ -74,6 +74,22 @@ final class CapabilityEvaluatorTests: XCTestCase {
         XCTAssertEqual(full.hid, .available)
         XCTAssertEqual(full.accessibility, .available)
 
+        let dtuhid = Plan2Capabilities(
+            render: .ioSurface,
+            input: .dtuhid,
+            accessibility: .xcuiTest,
+            multiTouch: .unknown,
+            hardwareButtons: .unknown,
+            notes: [:]
+        )
+        let dtuhidCapabilities = CapabilityEvaluator.evaluate(
+            runtimes: [],
+            frameworks: frameworks,
+            simctlAvailable: true,
+            plan2: dtuhid
+        )
+        XCTAssertEqual(dtuhidCapabilities.hid, .available)
+
         let unavailable = Plan2Capabilities(
             render: .screenshotPolling,
             input: .unavailable,

@@ -102,6 +102,27 @@ Giới hạn còn lại:
 - `simctl recordVideo` headless không dừng sau SIGINT (quá 10 giây, process còn sống); recording
   integration test skip. Cần framebuffer/AVAssetWriter hoặc display host (Plan 5/6).
 
+## dtuhidd đã thay XCUITestInputService (2026-10-20)
+
+`DTUHIDInputService` nối XPC tới `com.apple.coredevice.feature.remote.hid.digitizer` qua
+`SimDevice.lookup` + các symbol `_4sim`; message `IndigoDigitizerEvent` / `IndigoKeyboardButtonEvent`
+/ `IndigoButtonEvent`; toạ độ chuẩn hoá 0..1.
+
+Đã xác minh thật:
+
+| Input | Kết quả |
+|---|---|
+| Tap (preview click + CLI) | counter `0 → 1`, có ảnh framebuffer |
+| Type `abc123`, `hello@example.com` | text field và label đúng |
+| Swipe-left | `gesture=swipe-left` |
+| Long press | `gesture=long-press` |
+| Vertical scroll | nội dung cuộn |
+| Home button | về Home screen |
+| Integration flow | **PASS 43s**, không dùng XCUITest cho input |
+
+Chưa xác nhận: pinch/rotate hai ngón (label canvas trống); gate vẫn để `multiTouch=unknown`.
+XCUITest helper chỉ còn dùng cho accessibility tree/find; không còn là input path.
+
 ## Hướng khả thi
 
 ### A. DeviceKit/CoreDevice HID (khuyến nghị spike)

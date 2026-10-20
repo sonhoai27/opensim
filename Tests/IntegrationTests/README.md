@@ -17,7 +17,7 @@ Expected: `Executed 2 tests, with 0 failures`.
 ## Plan 2 fixture integration
 
 - Requires `OPENSIM_INTEGRATION=1`, a booted iOS simulator (the test boots one if needed), and `xcodegen` for the fixture/UI-test build. The XCUITest helper uses a persistent TCP session on loopback.
-- `testFixtureInputAccessibilityAndScreenshot` covers framebuffer screenshot, accessibility tree/find, tap → counter, type, long-press, swipe (pan), and `ui act`.
+- `testFixtureInputAccessibilityAndScreenshot` covers framebuffer screenshot, accessibility tree/find (XCUITest), tap/type/swipe/long-press (dtuhidd), and `ui act`.
 - `testFixtureRecording` starts/stops `simctl recordVideo`; on headless simulators this currently times out and the test is skipped with the error message.
 - `testCapabilityUnavailableWithoutServices` does not require a simulator.
 

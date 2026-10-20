@@ -34,6 +34,13 @@ public struct SimulatorKitLoader: SimulatorKitClassChecking {
         self.kitExecutable = kitExecutable
     }
 
+    public static func coreSimulatorVersion() -> String? {
+        guard let cls = NSClassFromString("SimDevice") else {
+            return nil
+        }
+        return Bundle(for: cls).infoDictionary?["CFBundleVersion"] as? String
+    }
+
     public func hasClass(_ name: String) -> Bool {
         Self.resolveClass(named: name) != nil
     }

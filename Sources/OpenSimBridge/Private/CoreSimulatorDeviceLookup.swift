@@ -57,6 +57,47 @@ public enum CoreSimulatorDeviceLookup {
         throw OpenSimError.deviceNotFound(id)
     }
 
+    public static func lookupPort(
+        _ service: String,
+        device: AnyObject,
+        deviceID: DeviceID
+    ) throws -> UInt32 {
+        let selector = NSSelectorFromString("lookup:error:")
+        guard let cls = object_getClass(device),
+              let method = class_getInstanceMethod(cls, selector) else {
+            throw privateAPIError("SimDevice.lookup:error: is missing", selector: "lookup:error:")
+        }
+        typealias LookupFunction = @convention(c) (
+            AnyObject,
+            Selector,
+            NSString,
+            UnsafeMutablePointer<NSError?>?
+        ) -> UInt32
+        var error: NSError?
+        let port = unsafeBitCast(method_getImplementation(method), to: LookupFunction.self)(
+            device,
+            selector,
+            service as NSString,
+            &error
+        )
+        guard port != 0 else {
+            if let error, error.domain == "com.apple.CoreSimulator.SimError", error.code == 405 {
+                throw OpenSimError(
+                    code: .capabilityUnavailable,
+                    message: "Simulator does not vend \(service)",
+                    details: ["udid": deviceID.rawValue, "service": service],
+                    recovery: "Use Xcode 27 / iOS 26 or newer"
+                )
+            }
+            throw privateAPIError(
+                "Could not look up \(service)",
+                selector: "lookup:error:",
+                error: error
+            )
+        }
+        return port
+    }
+
     private typealias StringErrorFunction = @convention(c) (
         AnyObject,
         Selector,

@@ -56,6 +56,16 @@ final class Plan2CapabilityGateTests: XCTestCase {
         XCTAssertEqual(result.input, .unavailable)
     }
 
+    func testDTUHIDBackendIsSelected() {
+        let result = Plan2CapabilityGate.evaluate(
+            checker: Checker(),
+            helperConfigured: false,
+            supportsDTUHID: true
+        )
+        XCTAssertEqual(result.input, .dtuhid)
+        XCTAssertEqual(result.notes["input"], "dtuhid")
+    }
+
     func testIndigoSymbolsMarkGesturesUnknownNotAvailable() {
         var checker = Checker()
         checker.classes = ["SimServiceContext", "SimDeviceScreen"]

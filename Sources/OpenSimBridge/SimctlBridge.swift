@@ -88,9 +88,15 @@ public struct SimctlBridge: SimulatorBridge, DoctorReporting, CrashReportReading
         let logs = SimctlLogService(executor: executor, timeout: timeout)
         let crashes = CrashReportService(devices: devices)
         let paths = OpenSimPaths()
+        _ = SimulatorKitLoader.live()
+        let coreSimulatorVersion = SimulatorKitLoader.coreSimulatorVersion()
+        let supportsDTUHID = coreSimulatorVersion.map {
+            $0.compare("1155.4", options: .numeric) != .orderedAscending
+        } ?? false
         let gate = Plan2CapabilityGate.evaluate(
             checker: SimulatorKitLoader.live(),
-            helperConfigured: XCUITestHelperRunner.isConfigured
+            helperConfigured: XCUITestHelperRunner.isConfigured,
+            supportsDTUHID: supportsDTUHID
         )
         let capture = SimctlScreenCapture(
             executor: executor,
@@ -117,12 +123,9 @@ public struct SimctlBridge: SimulatorBridge, DoctorReporting, CrashReportReading
         )
         let helperRunner = XCUITestHelperRunner()
         let bundleID = ProcessInfo.processInfo.environment["OPENSIM_XCUITEST_BUNDLE_ID"]
-        let inputService: (any InputControlling)?
-        if gate.input == .xcuiTest {
-            inputService = XCUITestInputService(runner: helperRunner, bundleID: bundleID)
-        } else {
-            inputService = nil
-        }
+        let inputService: (any InputControlling)? = supportsDTUHID
+            ? DTUHIDInputService(screens: screenService)
+            : nil
         let accessibilityService: (any AccessibilityReading)?
         if gate.accessibility == .xcuiTest {
             accessibilityService = XCUITestAccessibilityService(runner: helperRunner, bundleID: bundleID)

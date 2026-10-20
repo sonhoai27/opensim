@@ -1,6 +1,6 @@
 import UIKit
 
-final class FixtureViewController: UIViewController {
+final class FixtureViewController: UIViewController, UIGestureRecognizerDelegate {
     private var tapCount = 0
 
     private let titleLabel = UILabel()
@@ -132,7 +132,9 @@ final class FixtureViewController: UIViewController {
         let rightSwipe = UISwipeGestureRecognizer(target: self, action: #selector(swipedRight))
         rightSwipe.direction = .right
         swipeArea.addGestureRecognizer(rightSwipe)
-        swipeArea.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(panned)))
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(panned))
+        pan.delegate = self
+        swipeArea.addGestureRecognizer(pan)
         stack.addArrangedSubview(swipeArea)
 
         let canvas = makeGestureContainer(
@@ -243,6 +245,13 @@ final class FixtureViewController: UIViewController {
 
     @objc private func swipedRight(_ gesture: UISwipeGestureRecognizer) {
         gestureLabel.text = "gesture=swipe-right"
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        true
     }
 
     @objc private func panned(_ gesture: UIPanGestureRecognizer) {

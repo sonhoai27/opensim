@@ -8,6 +8,7 @@ public enum RenderBackend: String, Codable, Sendable, CaseIterable {
 }
 
 public enum InputBackend: String, Codable, Sendable, CaseIterable {
+    case dtuhid
     case simulatorKit
     case xcuiTest
     case unavailable
@@ -56,7 +57,8 @@ public enum Plan2CapabilityGate {
 
     public static func evaluate(
         checker: (any SimulatorKitClassChecking)?,
-        helperConfigured: Bool
+        helperConfigured: Bool,
+        supportsDTUHID: Bool = false
     ) -> Plan2Capabilities {
         let core = checker?.hasClass("SimServiceContext") == true
         let displays = core
@@ -70,7 +72,9 @@ public enum Plan2CapabilityGate {
             && checker?.hasClass("SimDeviceScreen") == true
             && checker?.responds("SimDeviceScreen", "screen") == true
         let render: RenderBackend = displays ? .simDisplayView : (surfaces ? .ioSurface : .screenshotPolling)
-        let input: InputBackend = displays ? .simulatorKit : (helperConfigured ? .xcuiTest : .unavailable)
+        let input: InputBackend = supportsDTUHID
+            ? .dtuhid
+            : (displays ? .simulatorKit : (helperConfigured ? .xcuiTest : .unavailable))
         let manager = checker?.hasClass("SimAccessibilityManager") == true
             && accessibilitySelectors.contains {
                 checker?.responds("SimAccessibilityManager", $0) == true

@@ -41,7 +41,7 @@ Plan 0 đã chạy trên iPhone Air/iOS 27.0; report đầy đủ ở `docs/supe
 Quy tắc:
 
 1. `render`: ưu tiên `framebufferSurface`; thiếu class/selector hoặc surface nil thì screenshot polling 10 fps.
-2. `input`: `xcuiTest` nếu helper cấu hình được; ngược lại `unavailable`. Không dùng `ViewEventInputService` làm primary.
+2. `input`: `dtuhid` (CoreSimulator 1155.4+/Xcode 27) là primary; XCUITest helper chỉ còn cho accessibility và fallback. Không dùng `ViewEventInputService`/legacy Indigo làm primary.
 3. `accessibility`: `xcuiTest`; private tree trả `a11y_unavailable`, không suy diễn từ `SimAccessibilityManager`.
 4. `multiTouch` và `hardwareButtons` chỉ `available` sau khi XCUITest helper chạy `pinch`/`rotate`/`home` trên fixture; gate xác nhận.
 5. `FramebufferDisplaySurface` đọc lại `displaySize`/surface mỗi frame; frame stream giới hạn `.bufferingNewest(1)`.
@@ -82,7 +82,7 @@ Quy tắc:
 | `Sources/OpenSimBridge/XCUITest/XCUITestSnapshotMapper.swift` | map snapshot JSON |
 | `Sources/OpenSimBridge/XCUITest/XCUITestHelperRunner.swift` | chạy helper test |
 | `Sources/OpenSimBridge/Services/XCUITestAccessibilityService.swift` | primary a11y |
-| `Sources/OpenSimBridge/Services/XCUITestInputService.swift` | primary input |
+| `Sources/OpenSimBridge/Services/XCUITestInputService.swift` | fallback input (legacy Xcode/helper) |
 | `Sources/OpenSimBridge/Services/UIAutomationService.swift` | tap selector, wait, act |
 | `Sources/OpenSimBridge/Operations/BridgeOperationExecutor.swift` | case `screen_*`, `ui_*` |
 | `Sources/OpenSimBridge/SimctlBridge.swift` | điền optional service |
@@ -906,7 +906,9 @@ public static func evaluate(checker: (any SimulatorKitClassChecking)?, helperCon
         && checker?.hasClass("SimDeviceScreen") == true
         && checker?.responds("SimDeviceScreen", "screen") == true
     let render: RenderBackend = displays ? .simDisplayView : (surfaces ? .ioSurface : .screenshotPolling)
-    let input: InputBackend = displays ? .simulatorKit : (helperConfigured ? .xcuiTest : .unavailable)
+    let input: InputBackend = supportsDTUHID
+        ? .dtuhid
+        : (displays ? .simulatorKit : (helperConfigured ? .xcuiTest : .unavailable))
     let manager = checker?.hasClass("SimAccessibilityManager") == true
         && accessibilitySelectors.contains { checker?.responds("SimAccessibilityManager", $0) == true }
     let accessibility: AccessibilityBackend = manager ? .simAccessibilityManager : (helperConfigured ? .xcuiTest : .unavailable)
@@ -1646,7 +1648,7 @@ public func makeDisplaySurface(for device: DeviceID) throws -> any DisplaySurfac
 }
 ```
 
-`live` tạo gate, `SimctlScreenService`, surface factory theo `gate.render` (`IOSurfaceDisplaySurface`, `ScreenshotPollingSurface`; nhánh `.simDisplayView` đã retired nên dùng IOSurface), và `FramebufferScreenshotter` khi gate render là ioSurface. Input chỉ có `XCUITestInputService` khi gate chọn `.xcuiTest` và env `OPENSIM_XCUITEST_BUNDLE_ID`; các nhánh simulatorKit/private a11y đã retired nên nil. Multi-touch/button vẫn `unknown` cho tới khi Task 15 xác minh.
+`live` tạo gate, `SimctlScreenService`, surface factory theo `gate.render` (`IOSurfaceDisplaySurface`, `ScreenshotPollingSurface`; nhánh `.simDisplayView` đã retired nên dùng IOSurface), và `FramebufferScreenshotter` khi gate render là ioSurface. Input dùng `DTUHIDInputService` khi CoreSimulator >= 1155.4; XCUITest helper chỉ còn cho accessibility (và fallback trên toolchain cũ). Multi-touch/button vẫn `unknown` cho tới khi xác minh hai ngón.
 
 `SimctlScreenService` conform thêm `ScreenshotOutWriting` để executor truyền `out`; operation `screen_screenshot` dùng overload này khi có `out`. `UIAutomationService` được inject trong `CLIRuntime.makeBackend` cùng catalog `.plan2()`.
 
@@ -2016,7 +2018,7 @@ git commit -m "feat(cli): add ui command group"
 
 ### Task 15: Integration test fixture, CLI smoke và chốt gate
 
-> **Status 2026-10-20:** persistent helper server đã thay one-shot. Integration flow `testFixtureInputAccessibilityAndScreenshot` **PASS** (screenshot, tree/find, tap → counter, type, long-press, swipe/pan, `ui act`); `testFixtureRecording` **skip** vì `simctl recordVideo` headless không dừng sau SIGINT (treo process). CLI từng lệnh là một session riêng nên state không qua lệnh; dùng `ui act` cho batch, daemon Plan 3 cho state dài hạn. Bằng chứng: `docs/superpowers/spikes/2026-10-20-plan2-input-blocker.md`.
+> **Status 2026-10-20:** input đã chuyển sang **dtuhidd XPC** (`DTUHIDInputService`); XCUITest chỉ còn accessibility. Integration flow `testFixtureInputAccessibilityAndScreenshot` **PASS 43s** (screenshot, tree/find, tap → counter, type email, long-press, swipe/pan, `ui act`). Đã xác minh thêm qua CLI/preview: tap, type ký tự shift `@`, swipe-left, long-press, scroll, Home button. **Pinch/rotate hai ngón chưa xác nhận** (gate `multiTouch=unknown`). `testFixtureRecording` **skip** vì `simctl recordVideo` headless không dừng. CLI giờ giữ state giữa các lệnh vì input không cần session; daemon Plan 3 vẫn cần cho accessibility/lease. Bằng chứng: `docs/superpowers/spikes/2026-10-20-plan2-input-blocker.md`.
 
 **Files:**
 - Create: `Tests/IntegrationTests/Support/FixtureInstaller.swift`, `Tests/IntegrationTests/Plan2FixtureIntegrationTests.swift`
