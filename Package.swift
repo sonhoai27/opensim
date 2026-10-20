@@ -8,6 +8,7 @@ let package = Package(
         .library(name: "OpenSimCore", targets: ["OpenSimCore"]),
         .library(name: "OpenSimBridge", targets: ["OpenSimBridge"]),
         .library(name: "OpenSimBridgeUI", targets: ["OpenSimBridgeUI"]),
+        .library(name: "OpenSimProtocol", targets: ["OpenSimProtocol"]),
         .executable(name: "opensim", targets: ["OpenSimCLI"]),
         .executable(name: "OpenSimPreview", targets: ["OpenSimPreview"]),
     ],
@@ -18,6 +19,7 @@ let package = Package(
         .target(name: "OpenSimCore"),
         .target(name: "OpenSimBridge", dependencies: ["OpenSimCore"]),
         .target(name: "OpenSimBridgeUI", dependencies: ["OpenSimCore", "OpenSimBridge"]),
+        .target(name: "OpenSimProtocol", dependencies: ["OpenSimCore"]),
         .executableTarget(
             name: "OpenSimPreview",
             dependencies: ["OpenSimCore", "OpenSimBridge", "OpenSimBridgeUI"]
@@ -31,6 +33,7 @@ let package = Package(
             ]
         ),
         .testTarget(name: "OpenSimCoreTests", dependencies: ["OpenSimCore"]),
+        .testTarget(name: "OpenSimProtocolTests", dependencies: ["OpenSimProtocol", "OpenSimCore"]),
         .testTarget(name: "OpenSimBridgeTests", dependencies: ["OpenSimBridge", "OpenSimCore"]),
         .testTarget(
             name: "OpenSimBridgeUITests",
