@@ -26,8 +26,11 @@ public enum DaemonServer {
     ) async throws -> RunningDaemonServer {
         let router = Router<BasicRequestContext>()
         router.add(middleware: SecurityMiddleware(token: token))
+        router.add(middleware: ErrorEnvelopeMiddleware())
         HealthRoutes.register(on: router, services: services)
         DeviceRoutes.register(on: router, services: services)
+        SessionRoutes.register(on: router, services: services)
+        OperationRoutes.register(on: router, services: services)
 
         let baseURL = try loopbackURL("http://127.0.0.1:\(port)")
         let context = DaemonRouteContext(services: services, token: token, baseURL: baseURL)
