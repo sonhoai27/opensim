@@ -9,6 +9,7 @@ let package = Package(
         .library(name: "OpenSimBridge", targets: ["OpenSimBridge"]),
         .library(name: "OpenSimBridgeUI", targets: ["OpenSimBridgeUI"]),
         .executable(name: "opensim", targets: ["OpenSimCLI"]),
+        .executable(name: "OpenSimPreview", targets: ["OpenSimPreview"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
@@ -17,6 +18,10 @@ let package = Package(
         .target(name: "OpenSimCore"),
         .target(name: "OpenSimBridge", dependencies: ["OpenSimCore"]),
         .target(name: "OpenSimBridgeUI", dependencies: ["OpenSimCore", "OpenSimBridge"]),
+        .executableTarget(
+            name: "OpenSimPreview",
+            dependencies: ["OpenSimCore", "OpenSimBridge", "OpenSimBridgeUI"]
+        ),
         .executableTarget(
             name: "OpenSimCLI",
             dependencies: [

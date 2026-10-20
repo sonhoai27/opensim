@@ -85,19 +85,18 @@ public final class SimulatorScreenView: NSView {
         guard displaySize.width > 0, fit.width > 0 else { return }
         let scale = fit.width / displaySize.width
 
-        rotationContainer.layer?.setAffineTransform(.identity)
-        rotationContainer.bounds = CGRect(origin: .zero, size: base)
+        let scaledBase = CGSize(
+            width: base.width * scale,
+            height: base.height * scale
+        )
         rotationContainer.frame = CGRect(
-            x: bounds.midX - base.width / 2,
-            y: bounds.midY - base.height / 2,
-            width: base.width,
-            height: base.height
+            x: bounds.midX - scaledBase.width / 2,
+            y: bounds.midY - scaledBase.height / 2,
+            width: scaledBase.width,
+            height: scaledBase.height
         )
         surface.view.frame = rotationContainer.bounds
-        let angle = CGFloat(rotation.degrees) * .pi / 180
-        rotationContainer.layer?.setAffineTransform(
-            CGAffineTransform(rotationAngle: angle).scaledBy(x: scale, y: scale)
-        )
+        rotationContainer.frameCenterRotation = CGFloat(rotation.degrees)
     }
 
     public func simulatorPoint(fromViewPoint point: NSPoint) -> Point? {
