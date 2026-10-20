@@ -98,10 +98,11 @@ public struct SimctlBridge: SimulatorBridge, DoctorReporting, CrashReportReading
             helperConfigured: XCUITestHelperRunner.isConfigured,
             supportsDTUHID: supportsDTUHID
         )
+        let profiles = SimctlDeviceTypeProfileProvider(executor: executor, timeout: timeout)
         let capture = SimctlScreenCapture(
             executor: executor,
             devices: devices,
-            profiles: SimctlDeviceTypeProfileProvider(executor: executor, timeout: timeout),
+            profiles: profiles,
             paths: paths,
             timeout: timeout
         )
@@ -124,7 +125,7 @@ public struct SimctlBridge: SimulatorBridge, DoctorReporting, CrashReportReading
         let helperRunner = XCUITestHelperRunner()
         let bundleID = ProcessInfo.processInfo.environment["OPENSIM_XCUITEST_BUNDLE_ID"]
         let inputService: (any InputControlling)? = supportsDTUHID
-            ? DTUHIDInputService(screens: screenService)
+            ? DTUHIDInputService(screens: screenService, devices: devices, profiles: profiles)
             : nil
         let accessibilityService: (any AccessibilityReading)?
         if gate.accessibility == .xcuiTest {

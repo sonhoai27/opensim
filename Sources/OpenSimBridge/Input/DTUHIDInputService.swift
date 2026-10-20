@@ -4,11 +4,19 @@ import OpenSimCore
 
 public actor DTUHIDInputService: InputControlling {
     private let screens: any ScreenControlling
+    private let devices: (any DeviceControlling)?
+    private let profiles: (any ScreenProfileProviding)?
     private var connections: [DeviceID: DTUHIDConnection] = [:]
     private var screenPoints: [DeviceID: CGSize] = [:]
 
-    public init(screens: any ScreenControlling) {
+    public init(
+        screens: any ScreenControlling,
+        devices: (any DeviceControlling)? = nil,
+        profiles: (any ScreenProfileProviding)? = nil
+    ) {
         self.screens = screens
+        self.devices = devices
+        self.profiles = profiles
     }
 
     public func tap(on device: DeviceID, at point: Point, settle: Bool) async throws {
@@ -194,6 +202,23 @@ public actor DTUHIDInputService: InputControlling {
     private func size(for device: DeviceID) async throws -> CGSize {
         if let cached = screenPoints[device] {
             return cached
+        }
+        if let devices, let profiles {
+            do {
+                let info = try await devices.device(device)
+                let profile = try await profiles.profile(for: info.deviceType)
+                let scale = max(1, profile.scale)
+                let size = CGSize(
+                    width: Double(profile.width) / scale,
+                    height: Double(profile.height) / scale
+                )
+                if size.width > 0, size.height > 0 {
+                    screenPoints[device] = size
+                    return size
+                }
+            } catch {
+                // Fall back to simctl screen enumeration below.
+            }
         }
         let screens = try await screens.screens(for: device)
         guard let main = screens.first(where: { $0.displayClass == 0 }) ?? screens.first else {
