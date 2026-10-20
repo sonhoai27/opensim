@@ -11,6 +11,8 @@ public struct OpenSimCommand: AsyncParsableCommand {
             DeviceCommand.self,
             RuntimeCommand.self,
             AppCommand.self,
+            LogCommand.self,
+            DoctorCommand.self,
         ]
     )
 

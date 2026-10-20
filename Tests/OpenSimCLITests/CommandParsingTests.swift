@@ -44,4 +44,16 @@ final class CommandParsingTests: XCTestCase {
         let container = try XCTUnwrap(command as? AppContainerCommand)
         XCTAssertEqual(container.kind, "data")
     }
+
+    func testParsesLogTailLimitAndCursor() throws {
+        let command = try OpenSimCommand.parseAsRoot(["log", "tail", "--limit", "25", "--cursor", "abc"])
+        let tail = try XCTUnwrap(command as? LogTailCommand)
+        XCTAssertEqual(tail.limit, 25)
+        XCTAssertEqual(tail.cursor, "abc")
+    }
+
+    func testRootHasFiveGroups() {
+        let names = OpenSimCommand.configuration.subcommands.map { $0.configuration.commandName }
+        XCTAssertEqual(Set(names), Set(["device", "runtime", "app", "log", "doctor"]))
+    }
 }

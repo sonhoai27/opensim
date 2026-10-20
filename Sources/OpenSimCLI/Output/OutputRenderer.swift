@@ -59,4 +59,8 @@ public struct OutputRenderer: Sendable {
             writeErr("recovery: \(recovery)\n")
         }
     }
+
+    public func line(_ text: String) {
+        writeOut(text + "\n")
+    }
 }
