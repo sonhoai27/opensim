@@ -462,7 +462,7 @@ set -euo pipefail
 ROOT="${0:A:h}"
 command -v xcodegen >/dev/null || { print -u2 "xcodegen is required"; exit 2; }
 cd "$ROOT"
-xcodegen generate --spec project.yml --project OpenSimFixture.xcodeproj
+xcodegen generate --spec project.yml --project .
 xcodebuild -project OpenSimFixture.xcodeproj -scheme OpenSimFixture -configuration Debug \
   -sdk iphonesimulator -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
 print "$ROOT/build/Build/Products/Debug-iphonesimulator/OpenSimFixture.app"
@@ -1296,7 +1296,9 @@ Expected: FAIL với `cannot find 'HelperNode' in scope`.
 
 `HelperNode` Codable gồm `role`, `identifier`, `label`, `value`, `x`, `y`, `width`, `height`, `enabled`, `selected`, `children`. `XCUITestSnapshotMapper.toUIElement` tạo id `xct-<path>`, map frame; `limited` cắt depth/node và đặt `truncated`.
 
-`OpenSimFixtureUITests.testHelper`: đọc env `OPENSIM_HELPER_ACTION`, `OPENSIM_HELPER_BUNDLE_ID`, `OPENSIM_HELPER_IDENTIFIER`, `OPENSIM_HELPER_SCALE`, `OPENSIM_HELPER_ANGLE`; `XCUIApplication(bundleIdentifier:)`, `activate`; action `tree` dùng `app.snapshot()` đệ quy một cấp children, `tap-id` dùng `descendants(matching:.any).matching(identifier:).firstMatch.tap()`, `pinch` dùng `app.pinch(withScale:velocity:)`, `rotate`, `home` dùng `XCUIDevice.shared.press(.home)`; in `OPENSIM_HELPER_RESULT:<base64 JSON>`.
+`OpenSimFixtureUITests.testHelper`: đọc env `OPENSIM_HELPER_ACTION`, `OPENSIM_HELPER_BUNDLE_ID`, `OPENSIM_HELPER_IDENTIFIER`, `OPENSIM_HELPER_X/Y`, `OPENSIM_HELPER_FROMX/FROMY`, `OPENSIM_HELPER_TOX/TOY`, `OPENSIM_HELPER_DURATION_MS`, `OPENSIM_HELPER_TEXT`, `OPENSIM_HELPER_SCALE`, `OPENSIM_HELPER_ANGLE`, `OPENSIM_HELPER_DX/DY`, `OPENSIM_HELPER_KEY`, `OPENSIM_HELPER_MODIFIER_*`, `OPENSIM_HELPER_BUTTON`; `XCUIApplication(bundleIdentifier:)`, `activate`; action `tree` dùng `try app.snapshot()` đệ quy (depth tối đa 30), `tapIdentifier` dùng `descendants(matching:.any).matching(identifier:).firstMatch.tap()`, `tapPoint`/`scroll` dùng coordinate, `typeText`, `swipe`/`drag`/`longPress`, `pinch`, `rotate`, `key` dùng `app.typeKey(_:modifierFlags:)`, `button` chỉ hỗ trợ `home` bằng `XCUIDevice.shared.press(.home)`; in `OPENSIM_HELPER_RESULT:<base64 JSON>`.
+
+Xcode 27.1 đổi `XCUIKeyModifierFlags` thành `XCUIElement.KeyModifierFlags` và `app.snapshot()` thành throwing; fixture đã cập nhật theo API này.
 
 ```swift
 func testHelper() throws {
@@ -1326,7 +1328,9 @@ func testHelper() throws {
 }
 ```
 
-`XCUITestHelperRunner` kiểm tra `xcodegen` + `Fixtures/OpenSimFixture/project.yml`; `build-for-testing` vào cache `~/Library/Caches/OpenSim/xcuitest`; mỗi lần chạy copy `.xctestrun`, inject `EnvironmentVariables` (`OPENSIM_HELPER_*`), chạy `xcodebuild test-without-building -xctestrun <copy> -destination id=<udid> -only-testing:OpenSimFixtureUITests/OpenSimFixtureUITests/testHelper`, parse marker base64. `run` yêu cầu `bundleID`, thiếu thì `invalid_argument`.
+`XCUITestHelperRunner` kiểm tra `xcodegen` + `Fixtures/OpenSimFixture/project.yml`; `build-for-testing` vào cache `~/Library/Caches/OpenSim/xcuitest`; mỗi lần chạy copy `.xctestrun` **vào cùng thư mục `Build/Products`** (vì `__TESTROOT__` resolve theo vị trí file), inject `EnvironmentVariables` (`OPENSIM_HELPER_*`), chạy `xcodebuild test-without-building -xctestrun <copy> -destination id=<udid> -only-testing:OpenSimFixtureUITests/OpenSimFixtureUITests/testHelper` với timeout 300 giây, parse marker base64. `run` yêu cầu `bundleID`, thiếu thì `invalid_argument`.
+
+Cache build dùng stamp mtime của fixture để tránh `build-for-testing` lại mỗi lần. Lần chạy thật đầu tiên mất khoảng 130 giây (app build + test build + 2 helper invocation); các lần sau nhanh hơn nhưng mỗi action vẫn là một lần xcodebuild.
 
 `XCUITestAccessibilityService.tree` gọi helper `tree`, map, giới hạn; `find` dùng `UIElementMatcher`. `XCUITestInputService` map point sang `coordinate(withNormalizedOffset:)` trên app; `pinch`/`rotate` gọi helper; `button` chỉ hỗ trợ `.home`, còn lại `capability_unavailable`. Cả hai đọc bundle ID từ init hoặc env `OPENSIM_XCUITEST_BUNDLE_ID`; thiếu bundle ID thì service không được tạo. Cả hai chỉ được tạo khi helper configured; fallback test skip khi primary active.
 

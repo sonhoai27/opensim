@@ -4,7 +4,7 @@ ROOT="${0:A:h}"
 cd "$ROOT"
 
 if command -v xcodegen >/dev/null 2>&1; then
-  xcodegen generate --spec project.yml --project OpenSimFixture.xcodeproj
+  xcodegen generate --spec project.yml --project .
   xcodebuild -project OpenSimFixture.xcodeproj -scheme OpenSimFixture -configuration Debug \
     -sdk iphonesimulator -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
   print "$ROOT/build/Build/Products/Debug-iphonesimulator/OpenSimFixture.app"
