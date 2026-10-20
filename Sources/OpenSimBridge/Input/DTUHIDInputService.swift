@@ -152,7 +152,7 @@ public actor DTUHIDInputService: InputControlling {
         let connection = try connection(for: device)
         let steps = max(6, min(40, max(durationMs, 60) / 16))
         let delay = max(4, durationMs / steps)
-        let startAngle = -Double.pi / 2
+        let startAngle: Double = 0
         let endAngle = startAngle + angleDelta * Double.pi / 180
 
         func fingers(distance: Double, angle: Double) -> (Point, Point) {

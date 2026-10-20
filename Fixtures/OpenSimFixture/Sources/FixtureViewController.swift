@@ -1,6 +1,6 @@
 import UIKit
 
-final class FixtureViewController: UIViewController, UIGestureRecognizerDelegate {
+final class FixtureViewController: UIViewController, UIGestureRecognizerDelegate, UITextFieldDelegate {
     private var tapCount = 0
 
     private let titleLabel = UILabel()
@@ -71,6 +71,7 @@ final class FixtureViewController: UIViewController, UIGestureRecognizerDelegate
         textField.placeholder = "Type here"
         textField.borderStyle = .roundedRect
         textField.accessibilityIdentifier = "fixture-text-field"
+        textField.delegate = self
         textField.addTarget(self, action: #selector(textChanged), for: .editingChanged)
         textField.heightAnchor.constraint(equalToConstant: 44).isActive = true
         stack.addArrangedSubview(textField)
@@ -144,6 +145,9 @@ final class FixtureViewController: UIViewController, UIGestureRecognizerDelegate
         )
         canvas.addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinched)))
         canvas.addGestureRecognizer(UIRotationGestureRecognizer(target: self, action: #selector(rotated)))
+        let twoFingerTap = UITapGestureRecognizer(target: self, action: #selector(twoFingerTapped))
+        twoFingerTap.numberOfTouchesRequired = 2
+        canvas.addGestureRecognizer(twoFingerTap)
         stack.addArrangedSubview(canvas)
 
         gestureLabel.accessibilityIdentifier = "fixture-gesture-label"
@@ -247,6 +251,11 @@ final class FixtureViewController: UIViewController, UIGestureRecognizerDelegate
         gestureLabel.text = "gesture=swipe-right"
     }
 
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        textField.resignFirstResponder()
+        return true
+    }
+
     func gestureRecognizer(
         _ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
@@ -263,6 +272,10 @@ final class FixtureViewController: UIViewController, UIGestureRecognizerDelegate
 
     @objc private func pinched(_ gesture: UIPinchGestureRecognizer) {
         canvasLabel.text = String(format: "canvas=scale:%.2f,rotation:%.2f", gesture.scale, 1.0)
+    }
+
+    @objc private func twoFingerTapped(_ gesture: UITapGestureRecognizer) {
+        canvasLabel.text = "canvas=two-finger"
     }
 
     @objc private func rotated(_ gesture: UIRotationGestureRecognizer) {

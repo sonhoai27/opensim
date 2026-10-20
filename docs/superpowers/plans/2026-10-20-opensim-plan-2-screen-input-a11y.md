@@ -1214,7 +1214,7 @@ Expected: FAIL với `cannot find 'IOSurfaceDisplaySurface' in scope`.
 
 - [ ] **Step 3: Viết IOSurface surface**
 
-`connect` lấy `SimDeviceScreen` object qua `initWithDevice:screenID:` (screenID 1) bằng IMP, đọc `.screen`, rồi gọi `framebufferSurface` trên proxy (dynamic forwarding), chuyển IOSurface sang `CGImage` bằng `CIContext` rồi gán `view.layer.contents`, `contentsGravity = .resizeAspect`; refresh 30 Hz bằng task 33 ms; `pixelSize` từ `IOSurfaceGetWidth/Height`; `screenScale` từ `ScreenControlling.screens`. `isSupported` yêu cầu `SimDeviceScreen` class, selector `screen`, và `SimServiceContext` class. Lỗi thiếu API trả `private_api_unavailable`.
+`connect` lấy `SimDeviceScreen` object qua `initWithDevice:screenID:` (screenID 1) bằng IMP, đọc `.screen`, rồi gọi `framebufferSurface` trên proxy (dynamic forwarding), chuyển IOSurface sang `CGImage` bằng `CIContext` rồi gán `view.layer.contents`, `contentsGravity = .resizeAspect`; refresh bằng `NSView.displayLink` 60 Hz (fallback task 16 ms khi view chưa có window), không dùng task 33 ms; `pixelSize` từ `IOSurfaceGetWidth/Height`; `screenScale` từ `ScreenControlling.screens`. `isSupported` yêu cầu `SimDeviceScreen` class, selector `screen`, và `SimServiceContext` class. Lỗi thiếu API trả `private_api_unavailable`.
 
 Gán trực tiếp IOSurface vào `layer.contents` làm process crash (`swift_unknownObjectRelease`, SIGTRAP) trên macOS 27.0.1; đường CGImage đã được kiểm chứng bằng integration test kết nối simulator thật. Giữ strong reference tới IOSurface trong surface và clear layer trước khi thả ở `disconnect`.
 
@@ -2018,7 +2018,7 @@ git commit -m "feat(cli): add ui command group"
 
 ### Task 15: Integration test fixture, CLI smoke và chốt gate
 
-> **Status 2026-10-20:** input đã chuyển sang **dtuhidd XPC** (`DTUHIDInputService`); XCUITest chỉ còn accessibility. Integration flow `testFixtureInputAccessibilityAndScreenshot` **PASS 43s** (screenshot, tree/find, tap → counter, type email, long-press, swipe/pan, `ui act`). Đã xác minh thêm qua CLI/preview: tap, type ký tự shift `@`, swipe-left, long-press, scroll, Home button. **Pinch/rotate hai ngón chưa xác nhận** (gate `multiTouch=unknown`). `testFixtureRecording` **skip** vì `simctl recordVideo` headless không dừng. CLI giờ giữ state giữa các lệnh vì input không cần session; daemon Plan 3 vẫn cần cho accessibility/lease. Bằng chứng: `docs/superpowers/spikes/2026-10-20-plan2-input-blocker.md`.
+> **Status 2026-10-20:** input đã chuyển sang **dtuhidd XPC** (`DTUHIDInputService`); XCUITest chỉ còn accessibility. Integration flow `testFixtureInputAccessibilityAndScreenshot` **PASS 43s** (screenshot, tree/find, tap → counter, type email, long-press, swipe/pan, `ui act`). Đã xác minh thêm qua CLI/preview: tap, type ký tự shift `@`, swipe-left, long-press, scroll, Home button. Pinch/rotate hai ngón đã xác nhận; gate `multiTouch`/`hardwareButtons = available`. `testFixtureRecording` **skip** vì `simctl recordVideo` headless không dừng. CLI giờ giữ state giữa các lệnh vì input không cần session; daemon Plan 3 vẫn cần cho accessibility/lease. Bằng chứng: `docs/superpowers/spikes/2026-10-20-plan2-input-blocker.md`.
 
 **Files:**
 - Create: `Tests/IntegrationTests/Support/FixtureInstaller.swift`, `Tests/IntegrationTests/Plan2FixtureIntegrationTests.swift`

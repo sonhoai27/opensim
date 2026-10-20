@@ -75,6 +75,8 @@ final class Plan2FixtureIntegrationTests: XCTestCase {
             device: device.id
         )
         XCTAssertNotNil(typed)
+        try await input.key(on: device.id, key: Key(name: "return"), modifiers: KeyModifiers())
+        try await Task.sleep(for: .milliseconds(300))
 
         let gestureTree = try await accessibility.tree(on: device.id, maxDepth: 30, maxNodes: 2_000)
         let longPressElement = try XCTUnwrap(

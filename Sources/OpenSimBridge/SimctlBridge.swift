@@ -134,7 +134,8 @@ public struct SimctlBridge: SimulatorBridge, DoctorReporting, CrashReportReading
         }
         let screenScaleProvider: @Sendable (DeviceID) async -> CGFloat = { device in
             let screens = try? await screenService.screens(for: device)
-            return screens?.first?.scale ?? 1
+            let main = screens?.first(where: { $0.displayClass == 0 }) ?? screens?.first
+            return main?.scale ?? 1
         }
         let displaySurfaceFactory: @MainActor @Sendable (DeviceID) throws -> any DisplaySurface = { device in
             switch gate.render {

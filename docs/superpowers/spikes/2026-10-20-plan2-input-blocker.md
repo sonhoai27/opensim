@@ -120,7 +120,8 @@ Giới hạn còn lại:
 | Home button | về Home screen |
 | Integration flow | **PASS 43s**, không dùng XCUITest cho input |
 
-Chưa xác nhận: pinch/rotate hai ngón (label canvas trống); gate vẫn để `multiTouch=unknown`.
+Pinch/rotate hai ngón đã PASS (`canvas=scale:1.76...`, `rotation:1.48...`) sau khi đổi trục hai
+ngón sang ngang như idb; `multiTouch`/`hardwareButtons` chuyển `available` trong gate.
 XCUITest helper chỉ còn dùng cho accessibility tree/find; không còn là input path.
 
 ## Hướng khả thi

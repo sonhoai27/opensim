@@ -88,8 +88,8 @@ public enum Plan2CapabilityGate {
             render: render,
             input: input,
             accessibility: accessibility,
-            multiTouch: symbols.isEmpty ? .unavailable : .unknown,
-            hardwareButtons: sends.isEmpty ? .unavailable : .unknown,
+            multiTouch: supportsDTUHID ? .available : (symbols.isEmpty ? .unavailable : .unknown),
+            hardwareButtons: supportsDTUHID ? .available : (sends.isEmpty ? .unavailable : .unknown),
             notes: [
                 "render": render.rawValue,
                 "input": input.rawValue,

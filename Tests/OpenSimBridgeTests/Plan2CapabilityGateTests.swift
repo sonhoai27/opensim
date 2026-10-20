@@ -63,6 +63,8 @@ final class Plan2CapabilityGateTests: XCTestCase {
             supportsDTUHID: true
         )
         XCTAssertEqual(result.input, .dtuhid)
+        XCTAssertEqual(result.multiTouch, .available)
+        XCTAssertEqual(result.hardwareButtons, .available)
         XCTAssertEqual(result.notes["input"], "dtuhid")
     }
 
