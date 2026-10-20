@@ -2007,6 +2007,8 @@ git commit -m "feat(cli): add ui command group"
 
 ### Task 15: Integration test fixture, CLI smoke và chốt gate
 
+> **BLOCKER 2026-10-20:** `xcodebuild test-without-building` shutdown simulator sau mỗi lần helper chạy; mỗi action mất 75–147 giây và app state bị reset. Không chạy Task 15 cho tới khi input path được sửa. Bằng chứng và hướng xử lý: `docs/superpowers/spikes/2026-10-20-plan2-input-blocker.md`.
+
 **Files:**
 - Create: `Tests/IntegrationTests/Support/FixtureInstaller.swift`, `Tests/IntegrationTests/Plan2FixtureIntegrationTests.swift`
 - Modify: `Tests/IntegrationTests/README.md`, `docs/superpowers/spikes/2026-10-20-plan2-capability-gate.md`
