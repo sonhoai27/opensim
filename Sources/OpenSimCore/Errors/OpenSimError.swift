@@ -37,10 +37,15 @@ public struct OpenSimError: Error, Codable, Sendable, Equatable {
         )
     }
 
-    public static func invalidArgument(_ message: String, recovery: String? = nil) -> OpenSimError {
+    public static func invalidArgument(
+        _ message: String,
+        details: [String: String] = [:],
+        recovery: String? = nil
+    ) -> OpenSimError {
         OpenSimError(
             code: .invalidArgument,
             message: message,
+            details: details,
             recovery: recovery,
             retryable: false
         )
