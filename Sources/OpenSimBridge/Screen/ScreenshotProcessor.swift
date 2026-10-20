@@ -20,6 +20,25 @@ public struct ScreenshotProcessor: Sendable {
     public init() {}
 
     public func render(source: URL, format: ScreenshotFormat, scale: Double, quality: Int?) throws -> RenderedScreenshot {
+        try validate(format: format, scale: scale, quality: quality)
+        guard let sourceImage = CGImageSourceCreateWithURL(source as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(sourceImage, 0, nil) else {
+            throw OpenSimError(code: .inputFailed, message: "Could not read screenshot")
+        }
+        return try renderImage(image, format: format, scale: scale, quality: quality)
+    }
+
+    public func render(
+        image: CGImage,
+        format: ScreenshotFormat,
+        scale: Double,
+        quality: Int?
+    ) throws -> RenderedScreenshot {
+        try validate(format: format, scale: scale, quality: quality)
+        return try renderImage(image, format: format, scale: scale, quality: quality)
+    }
+
+    private func validate(format: ScreenshotFormat, scale: Double, quality: Int?) throws {
         guard 0.1 <= scale && scale <= 4.0 else {
             throw OpenSimError.invalidArgument("scale must be between 0.1 and 4.0")
         }
@@ -29,10 +48,14 @@ public struct ScreenshotProcessor: Sendable {
         if let quality, !(1..<101).contains(quality) {
             throw OpenSimError.invalidArgument("quality must be between 1 and 100")
         }
-        guard let sourceImage = CGImageSourceCreateWithURL(source as CFURL, nil),
-              let image = CGImageSourceCreateImageAtIndex(sourceImage, 0, nil) else {
-            throw OpenSimError(code: .inputFailed, message: "Could not read screenshot")
-        }
+    }
+
+    private func renderImage(
+        _ image: CGImage,
+        format: ScreenshotFormat,
+        scale: Double,
+        quality: Int?
+    ) throws -> RenderedScreenshot {
         let width = max(1, Int((Double(image.width) * scale).rounded()))
         let height = max(1, Int((Double(image.height) * scale).rounded()))
         guard let context = CGContext(

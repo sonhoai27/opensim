@@ -4,10 +4,16 @@ import OpenSimCore
 public struct SimctlScreenService: ScreenControlling, RecordingControlling, ScreenshotOutWriting {
     private let capture: SimctlScreenCapture
     private let recorder: SimctlRecordingController
+    private let framebuffer: FramebufferScreenshotter?
 
-    public init(capture: SimctlScreenCapture, recorder: SimctlRecordingController) {
+    public init(
+        capture: SimctlScreenCapture,
+        recorder: SimctlRecordingController,
+        framebuffer: FramebufferScreenshotter? = nil
+    ) {
         self.capture = capture
         self.recorder = recorder
+        self.framebuffer = framebuffer
     }
 
     public func screens(for device: DeviceID) async throws -> [ScreenInfo] {
@@ -20,7 +26,20 @@ public struct SimctlScreenService: ScreenControlling, RecordingControlling, Scre
         scale: Double,
         quality: Int?
     ) async throws -> Screenshot {
-        try await capture.screenshot(on: device, format: format, scale: scale, quality: quality, out: nil)
+        if let framebuffer {
+            do {
+                return try framebuffer.screenshot(
+                    on: device,
+                    format: format,
+                    scale: scale,
+                    quality: quality,
+                    out: nil
+                )
+            } catch let error as OpenSimError where error.code == ErrorCode.privateApiUnavailable.rawValue {
+                // Fall back to simctl when the private framebuffer path is unavailable.
+            }
+        }
+        return try await capture.screenshot(on: device, format: format, scale: scale, quality: quality, out: nil)
     }
 
     public func screenshot(
@@ -30,7 +49,20 @@ public struct SimctlScreenService: ScreenControlling, RecordingControlling, Scre
         quality: Int?,
         out: String?
     ) async throws -> Screenshot {
-        try await capture.screenshot(on: device, format: format, scale: scale, quality: quality, out: out)
+        if let framebuffer {
+            do {
+                return try framebuffer.screenshot(
+                    on: device,
+                    format: format,
+                    scale: scale,
+                    quality: quality,
+                    out: out
+                )
+            } catch let error as OpenSimError where error.code == ErrorCode.privateApiUnavailable.rawValue {
+                // Fall back to simctl when the private framebuffer path is unavailable.
+            }
+        }
+        return try await capture.screenshot(on: device, format: format, scale: scale, quality: quality, out: out)
     }
 
     public func startRecording(on device: DeviceID, to path: String?, codec: VideoCodec) async throws -> RecordingID {

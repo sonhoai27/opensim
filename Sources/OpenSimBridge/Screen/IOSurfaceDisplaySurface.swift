@@ -56,7 +56,7 @@ public final class IOSurfaceDisplaySurface: DisplaySurface {
         guard let method = class_getInstanceMethod(screenClass, selector) else {
             throw surfaceError("SimDeviceScreen cannot be created")
         }
-        guard let allocated = class_createInstance(screenClass, 0) as AnyObject? else {
+        guard let allocated = Self.allocate(screenClass) else {
             throw surfaceError("Could not allocate SimDeviceScreen")
         }
         typealias InitFunction = @convention(c) (AnyObject, Selector, AnyObject, UInt32) -> Unmanaged<AnyObject>?
@@ -82,6 +82,14 @@ public final class IOSurfaceDisplaySurface: DisplaySurface {
         view.layer?.contents = nil
         framebufferSurface = nil
         screenObject = nil
+    }
+
+    private static func allocate(_ cls: AnyClass) -> AnyObject? {
+        let selector = NSSelectorFromString("alloc")
+        guard let method = class_getClassMethod(cls, selector) else { return nil }
+        typealias AllocateFunction = @convention(c) (AnyObject, Selector) -> Unmanaged<AnyObject>?
+        let allocate = unsafeBitCast(method_getImplementation(method), to: AllocateFunction.self)
+        return allocate(cls as AnyObject, selector)?.takeUnretainedValue()
     }
 
     private func startRefresh() {

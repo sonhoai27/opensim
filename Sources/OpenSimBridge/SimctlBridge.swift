@@ -97,7 +97,17 @@ public struct SimctlBridge: SimulatorBridge, DoctorReporting, CrashReportReading
             store: RecordingStateStore(directory: paths.recordingStateDirectory),
             paths: paths
         )
-        let screenService = SimctlScreenService(capture: capture, recorder: recording)
+        let framebuffer: FramebufferScreenshotter?
+        if gate.render == .ioSurface || gate.render == .simDisplayView {
+            framebuffer = FramebufferScreenshotter(paths: paths)
+        } else {
+            framebuffer = nil
+        }
+        let screenService = SimctlScreenService(
+            capture: capture,
+            recorder: recording,
+            framebuffer: framebuffer
+        )
         let helperRunner = XCUITestHelperRunner()
         let bundleID = ProcessInfo.processInfo.environment["OPENSIM_XCUITEST_BUNDLE_ID"]
         let inputService: (any InputControlling)?
