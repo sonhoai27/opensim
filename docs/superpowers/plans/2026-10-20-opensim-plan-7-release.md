@@ -998,7 +998,7 @@ Expected: FAIL vì `device delete` không có `--yes` vẫn chạy hoặc trả 
 
 - [ ] **Step 3: Siết confirm ở CLI và daemon**
 
-Trong command `device delete` (`Sources/OpenSimCLI/Commands/DeviceCommands.swift`), từ chối trước khi gọi daemon khi thiếu `--yes` và stdin không phải TTY:
+Trong command `device delete` (`Sources/OpenSimCLI/Commands/DeviceCommand.swift`), từ chối trước khi gọi daemon khi thiếu `--yes` và stdin không phải TTY:
 
 ```swift
 guard yes || isatty(STDIN_FILENO) == 1 else {
@@ -2396,11 +2396,11 @@ git commit -m "release: package dmg and generate homebrew cask and formula"
 - Create: `Sources/OpenSimCLI/Commands/UninstallCommand.swift`
 - Create: `Sources/OpenSimCLI/Commands/VersionCommand.swift`
 - Create: `Sources/OpenSimCore/Security/OwnedDeviceRegistry.swift`
-- Create: `Sources/OpenSimCore/Version/OpenSimVersion.swift`
+- Modify: `Sources/OpenSimCore/Support/OpenSimVersion.swift` (thêm `current = version`)
 - Create: `Tests/OpenSimCLITests/UninstallCommandTests.swift`
 - Modify: `Sources/OpenSimDaemon/LaunchAgent/LaunchAgentManager.swift` (thêm `uninstall(purge:)`)
-- Modify: `Sources/OpenSimCLI/Commands/RootCommand.swift` (đăng ký subcommand)
-- Modify: `Sources/OpenSimDaemon/Server/OperationHandlers.swift` (ghi registry khi create/delete)
+- Modify: `Sources/OpenSimCLI/OpenSimCommand.swift` (đăng ký subcommand)
+- Modify: `Sources/OpenSimDaemon/Operations/OperationDispatcher.swift` (ghi registry khi create/delete)
 
 **Interfaces:**
 - Consumes: `VERSION`; `LaunchAgentManager.install/bootstrap/kickstart/isLoaded` và `OpenSimPaths` từ Plan 3; daemon state file.
@@ -2540,13 +2540,10 @@ public struct OwnedDeviceRegistry: @unchecked Sendable {
 }
 ```
 
-Create `Sources/OpenSimCore/Version/OpenSimVersion.swift`:
+Modify `Sources/OpenSimCore/Support/OpenSimVersion.swift` (file Plan 1 đã tạo): thêm alias, không khai báo lại enum.
 
 ```swift
-public enum OpenSimVersion {
-    public static let current = "0.1.0"
-    public static let schemaVersion = 1
-}
+public static let current = version
 ```
 
 - [ ] **Step 4: Implement commands**
@@ -2693,7 +2690,7 @@ struct VersionCommand: ParsableCommand {
 }
 ```
 
-Đăng ký trong `RootCommand`:
+Đăng ký trong `OpenSimCommand`:
 
 ```swift
 static let configuration = CommandConfiguration(
@@ -2708,7 +2705,7 @@ static let configuration = CommandConfiguration(
         LogCommand.self,
         SessionCommand.self,
         StorageCommand.self,
-        PerfCommand.self,
+        PerformanceCommand.self,
         DoctorCommand.self,
         DaemonCommand.self,
         MCPCommand.self,
@@ -2719,7 +2716,7 @@ static let configuration = CommandConfiguration(
 )
 ```
 
-Trong `Sources/OpenSimDaemon/Server/OperationHandlers.swift`, sau `device create` thành công:
+Trong `Sources/OpenSimDaemon/Operations/OperationDispatcher.swift`, sau `device create` thành công:
 
 ```swift
 try OwnedDeviceRegistry().record(device.id.rawValue)
@@ -2747,7 +2744,7 @@ Expected: `Executed 2 tests, with 0 failures`; test LaunchAgent của Plan 3 v�
 - [ ] **Step 6: Commit**
 
 ```bash
-git add Sources/OpenSimCLI/Commands Sources/OpenSimDaemon/LaunchAgent Sources/OpenSimCore/Security/OwnedDeviceRegistry.swift Sources/OpenSimCore/Version Sources/OpenSimDaemon/Server/OperationHandlers.swift Tests/OpenSimCLITests
+git add Sources/OpenSimCLI/Commands Sources/OpenSimDaemon/LaunchAgent Sources/OpenSimCore/Security/OwnedDeviceRegistry.swift Sources/OpenSimCore/Support/OpenSimVersion.swift Sources/OpenSimDaemon/Operations/OperationDispatcher.swift Tests/OpenSimCLITests
 git commit -m "feat(cli): add setup uninstall and version commands"
 ```
 
@@ -2768,7 +2765,7 @@ git commit -m "feat(cli): add setup uninstall and version commands"
 - Create: `docs/troubleshooting.md`
 - Create: `docs/security.md`
 - Create: `docs/contributing.md`
-- Modify: `Sources/OpenSimCLI/Commands/RootCommand.swift` (dùng `OpenSimCommandCatalog.make()`)
+- Modify: `Sources/OpenSimCLI/OpenSimCommand.swift` (dùng `OpenSimCommandCatalog.make()`)
 - Modify: `.github/workflows/ci.yml` (thêm docs check)
 
 **Interfaces:**
@@ -2993,12 +2990,12 @@ import OpenSimCore
 
 enum OpenSimCommandCatalog {
     static func make() -> OperationCatalog {
-        OperationCatalog.plan5()
+        OperationCatalog.openSim()
     }
 }
 ```
 
-`OperationCatalog.plan5()` là factory duy nhất: `plan3()` (bao gồm Plan 2 `ui_*`) cộng storage/perf của Plan 5. Không có `registerUIOperations()` và không đăng ký operation ở Plan 7.
+`OperationCatalog.openSim()` là factory duy nhất: `plan5()` (Plan 2 `ui_*` + storage/perf) và các platform registration được thêm bởi Plan 9/10. Không có `registerUIOperations()` và không đăng ký operation ở Plan 7.
 
 Đăng ký command:
 
@@ -3006,7 +3003,7 @@ enum OpenSimCommandCatalog {
 DocsCommand.self,
 ```
 
-Trong `RootCommand`, thay phần dựng catalog bằng `OpenSimCommandCatalog.make()`.
+Trong `OpenSimCommand`, thay phần dựng catalog bằng `OpenSimCommandCatalog.make()`.
 
 - [ ] **Step 4: Sinh tài liệu và thêm check CI**
 
@@ -3862,9 +3859,9 @@ if ! print -r -- "$NEW" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
 fi
 print -r -- "$NEW" > "$ROOT/VERSION"
 sed -i '' "s/public static let current = \".*\"/public static let current = \"$NEW\"/" \
-  "$ROOT/Sources/OpenSimCore/Version/OpenSimVersion.swift"
+  "$ROOT/Sources/OpenSimCore/Support/OpenSimVersion.swift"
 "$ROOT/Scripts/release/verify-versions.sh"
-git -C "$ROOT" add VERSION Sources/OpenSimCore/Version/OpenSimVersion.swift
+git -C "$ROOT" add VERSION Sources/OpenSimCore/Support/OpenSimVersion.swift
 git -C "$ROOT" commit -m "release: bump version to $NEW"
 print "OK bump $NEW"
 ```

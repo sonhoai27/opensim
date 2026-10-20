@@ -21,7 +21,7 @@ Khi contract này mâu thuẫn với spec, spec thắng. Contract chỉ khóa t�
 | 7 | `2026-10-20-opensim-plan-7-release.md` | Hardening, CI, notarize, Homebrew, docs, release | Plan 1-6 | Bản open-source cài được |
 | 8 | `2026-10-20-opensim-plan-8-visionos.md` | visionOS adapter, fixture, test | Plan 7 | visionOS verified |
 | 9 | `2026-10-20-opensim-plan-9-physical-devices.md` | Thiết bị thật qua CoreDevice | Plan 3, Plan 7 | Physical device verified |
-| 10 | `2026-10-20-opensim-plan-10-android-emulator.md` | Android Emulator: AVD, adb, gRPC, uiautomator, system image | Plan 2, Plan 3, Plan 4 | Android AVD lifecycle + screen/input/a11y |
+| 10 | `2026-10-20-opensim-plan-10-android-emulator.md` | Android Emulator: AVD, adb, gRPC, uiautomator, system image | Plan 2, Plan 3, Plan 4, Plan 5 | Android AVD lifecycle + screen/input/a11y |
 
 ## 2. Repo layout
 
@@ -41,7 +41,6 @@ Sources/
     SimulatorScreenView.swift
   OpenSimAndroid/
     Services/
-    Catalog/
     Generated/
   OpenSimProtocol/
     Envelope.swift
@@ -390,6 +389,7 @@ public protocol RuntimeControlling: Sendable {
     func downloadRuntime(platform: Platform, version: String) async throws -> Runtime
     func installRuntime(at path: String) async throws -> Runtime
     func deleteRuntime(_ id: RuntimeID) async throws
+    func verifyRuntime(_ id: RuntimeID) async throws
 }
 
 public protocol AppControlling: Sendable {
@@ -615,7 +615,7 @@ public struct OperationCatalog: Sendable {
 - Văn xuôi tiếng Việt, code/identifier tiếng Anh; không ký tự CJK.
 - Nếu private API chưa được xác minh bởi Plan 0, dùng capability gate và fallback đã định trong spec; không bịa selector mới.
 - Plan 8/9 là post-release; không được yêu cầu đổi type/protocol lõi ngoài việc thêm adapter.
-- Plan 10 Android là platform thứ hai: adapter `OpenSimAndroid`, không đổi `OpenSimBridge`; dùng chung `Platform.android`, operation catalog, lease/audit và UI shell. Plan 10 có thể chạy song song Plan 5/6 hoặc sau Plan 7 tùy release scope.
+- Plan 10 Android là platform thứ hai: adapter `OpenSimAndroid`, không đổi `OpenSimBridge`; dùng chung `Platform.android`, operation catalog, lease/audit và UI shell. Plan 10 có thể chạy song song Plan 6 hoặc sau Plan 7 tùy release scope; Plan 5 là dependency của Plan 10.
 
 ## 11. Quyền sở hữu file
 

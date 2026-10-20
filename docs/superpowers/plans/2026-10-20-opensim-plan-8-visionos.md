@@ -55,7 +55,7 @@
 | `Tests/OpenSimBridgeUITests/VisionOSScreenModelTests.swift` | Test refresh, lỗi, không chồng | 8 |
 | `Tests/IntegrationTests/VisionOSIntegrationTests.swift` | Boot/render/screenshot/tap, skip/fail | 9 |
 | `Tests/Release/test-visionos.sh` | Chạy matrix có/không runtime | 9 |
-| `App/Sources/OpenSimApp/Windows/DeviceWindow.swift` | Chọn view visionOS polling | 10 |
+| `App/Sources/OpenSimApp/Windows/DeviceWindowRoot.swift` | Chọn view visionOS polling | 10 |
 | `docs/visionos.md` | Runbook, approval, giới hạn | 10 |
 | `docs/compatibility.md` | Thêm dòng visionOS post-release | 10 |
 | `README.md` | Ghi visionOS là post-release | 10 |
@@ -2411,7 +2411,7 @@ git commit -m "test(visionos): add integration matrix and skip policy"
 ### Task 10: App/CLI integration và tài liệu visionOS
 
 **Files:**
-- Modify: `App/Sources/OpenSimApp/Windows/DeviceWindow.swift` (chọn `VisionOSScreenView`)
+- Modify: `App/Sources/OpenSimApp/Windows/DeviceWindowRoot.swift` (chọn `VisionOSScreenView`)
 - Create: `docs/visionos.md`
 - Modify: `docs/compatibility.md` (thêm dòng visionOS)
 - Modify: `README.md` (ghi visionOS post-release)
@@ -2423,7 +2423,7 @@ git commit -m "test(visionos): add integration matrix and skip policy"
 
 - [ ] **Step 1: Sửa app chọn đường render**
 
-Trong `App/Sources/OpenSimApp/Windows/DeviceWindow.swift`, thay chỗ dựng `SimulatorScreenView` bằng nhánh sau (dùng đúng bridge đã inject trong view):
+Trong `App/Sources/OpenSimApp/Windows/DeviceWindowRoot.swift`, thay chỗ dựng `SimulatorScreenView` bằng nhánh sau (dùng đúng bridge đã inject trong view):
 
 ```swift
 if device.platform == .visionOS {
@@ -2598,7 +2598,7 @@ Expected: tất cả unit visionOS pass; `OK visionos runtime gate`; `OK visiono
 - [ ] **Step 6: Commit**
 
 ```bash
-git add App/Sources/OpenSimApp/Windows/DeviceWindow.swift docs/visionos.md docs/compatibility.md docs/release-checklist.md README.md
+git add App/Sources/OpenSimApp/Windows/DeviceWindowRoot.swift docs/visionos.md docs/compatibility.md docs/release-checklist.md README.md
 git commit -m "feat(visionos): integrate polling view and document support"
 ```
 

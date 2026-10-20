@@ -69,8 +69,8 @@
 | `Sources/OpenSimDaemon/Operations/OperationDispatcher.swift` | Physical handlers, audit | 8 |
 | `Sources/OpenSimDaemon/Server/DaemonServer.swift` | Catalog `openSim()` | 8 |
 | `Sources/OpenSimCLI/Commands/PhysicalCommand.swift` | CLI physical | 9 |
-| `Sources/OpenSimCLI/Commands/DeviceCommands.swift` | Cột Source | 9 |
-| `Sources/OpenSimCLI/Commands/OpenSimCommand.swift` | Nhóm physical | 9 |
+| `Sources/OpenSimCLI/Commands/DeviceCommand.swift` | Cột Source | 9 |
+| `Sources/OpenSimCLI/OpenSimCommand.swift` | Nhóm physical | 9 |
 | `Sources/OpenSimCLI/Commands/OpenSimCommandCatalog.swift` | Catalog `openSim()` | 9 |
 | `Sources/OpenSimCLI/Commands/MCPCommand.swift` | Catalog `openSim()` | 9 |
 | `Sources/OpenSimCLI/Commands/DoctorCommand.swift` | Block `physical` | 9 |
@@ -80,8 +80,8 @@
 | `App/Sources/OpenSimApp/Windows/PhysicalDeviceNotice.swift` | Unsupported notice | 10 |
 | `App/Sources/OpenSimApp/Windows/PhysicalTrustBanner.swift` | Trust/Developer Mode | 10 |
 | `App/Sources/OpenSimApp/Windows/PhysicalSigningSheet.swift` | Preflight trước install | 10 |
-| `App/Sources/OpenSimApp/Windows/DeviceWindow.swift` | Không dùng live view cho physical | 10 |
-| `App/Sources/OpenSimApp/Windows/DeviceWindowToolbar.swift` | Badge + disable control | 10 |
+| `App/Sources/OpenSimApp/Windows/DeviceWindowRoot.swift` | Không dùng live view cho physical | 10 |
+| `App/Sources/OpenSimApp/Windows/DeviceToolbar.swift` | Badge + disable control | 10 |
 | `App/Sources/OpenSimApp/App/AppShell.swift` | Badge trong row | 10 |
 | `App/Sources/OpenSimApp/App/DaemonClient.swift` | `physicalStatus(deviceID:)` | 10 |
 | `Tests/OpenSimBridgeTests/Physical/PhysicalTestSupport.swift` | Stub/fixture dùng chung cho test physical | 2 |
@@ -1047,7 +1047,7 @@ git commit -m "feat(physical): add composite bridge and presentation"
 
 **Files:**
 - Create: `Sources/OpenSimCore/Catalog/PhysicalOperations.swift`
-- Create: `Sources/OpenSimCore/Catalog/OpenSimCatalog.swift`
+- Modify: `Sources/OpenSimCore/Catalog/OpenSimCatalog.swift` (Plan 5 tạo `openSim()`)
 - Create: `Sources/OpenSimBridge/Physical/PhysicalAuditPolicy.swift`
 - Modify: `Sources/OpenSimCore/Validation/DeviceResolver.swift`
 - Modify: `Sources/OpenSimBridge/Operations/BridgeOperationExecutor.swift`
@@ -1115,6 +1115,8 @@ public extension OperationCatalog {
 }
 ```
 
+Plan 5 tạo `OpenSimCatalog.swift`/`openSim()`; Plan 9 chỉ thêm physical. Plan 10 sửa cùng function để thêm Android; không tạo `plan10()`/factory thứ hai. Nếu Plan 10 đã apply trước Plan 9, Plan 9 phải giữ `registerAndroidOperations()` trong body và test catalog chứa đồng thời `physical_*` + `android_*`.
+
 - [ ] **Step 4: Implement executor và daemon**
 
 Trong `Sources/OpenSimCore/Validation/DeviceResolver.swift`, sau bước xử lý query rỗng và trước UUID regex, thêm exact-ID branch:
@@ -1179,8 +1181,8 @@ git commit -m "feat(physical): wire catalog daemon and audit"
 
 **Files:**
 - Create: `Sources/OpenSimCLI/Commands/PhysicalCommand.swift`
-- Modify: `Sources/OpenSimCLI/Commands/DeviceCommands.swift`
-- Modify: `Sources/OpenSimCLI/Commands/OpenSimCommand.swift`
+- Modify: `Sources/OpenSimCLI/Commands/DeviceCommand.swift`
+- Modify: `Sources/OpenSimCLI/OpenSimCommand.swift`
 - Modify: `Sources/OpenSimCLI/Commands/OpenSimCommandCatalog.swift`
 - Modify: `Sources/OpenSimCLI/Commands/MCPCommand.swift`
 - Modify: `Sources/OpenSimCLI/Commands/DoctorCommand.swift`
@@ -1254,7 +1256,7 @@ struct PhysicalStatusCommand: AsyncParsableCommand {
 
 `pair` thêm `--timeout` mặc định 120 và in hướng dẫn Trust trước khi gọi. `unpair` thiếu `--yes` và stdin không phải TTY thì throw `confirmation_required` trước khi gọi backend. `check-signing` nhận `path`, `--device` optional; nếu có device, backend lấy UDID từ status. Bảng human-readable có cột `UDID`, `NAME`, `TRANSPORT`, `PAIRING`, `SCREENSHOT`, `INPUT`; JSON giữ nguyên envelope.
 
-`DeviceCommands.swift` thêm cột `SOURCE` suy ra từ prefix, không đổi JSON `Device`. `OpenSimCommand` thêm `PhysicalCommand.self`. `OpenSimCommandCatalog.make()` và `MCPCommand` dùng `OperationCatalog.openSim()`. `DoctorCommand` thêm:
+`DeviceCommand.swift` thêm cột `SOURCE` suy ra từ prefix, không đổi JSON `Device`. `OpenSimCommand` thêm `PhysicalCommand.self`. `OpenSimCommandCatalog.make()` và `MCPCommand` dùng `OperationCatalog.openSim()`. `DoctorCommand` thêm:
 
 ```swift
 let physical = PhysicalBridgeFactory.makeDefault()
@@ -1364,8 +1366,8 @@ git commit -m "feat(cli): add physical commands and MCP tools"
 - Create: `App/Sources/OpenSimApp/Windows/PhysicalDeviceNotice.swift`
 - Create: `App/Sources/OpenSimApp/Windows/PhysicalTrustBanner.swift`
 - Create: `App/Sources/OpenSimApp/Windows/PhysicalSigningSheet.swift`
-- Modify: `App/Sources/OpenSimApp/Windows/DeviceWindow.swift`
-- Modify: `App/Sources/OpenSimApp/Windows/DeviceWindowToolbar.swift`
+- Modify: `App/Sources/OpenSimApp/Windows/DeviceWindowRoot.swift`
+- Modify: `App/Sources/OpenSimApp/Windows/DeviceToolbar.swift`
 - Modify: `App/Sources/OpenSimApp/App/AppShell.swift`
 - Modify: `App/Sources/OpenSimApp/App/DaemonClient.swift`
 - Test: `Tests/OpenSimAppUITests/PhysicalDeviceUITests.swift`
@@ -1449,7 +1451,7 @@ if PhysicalDeviceID.isPhysicalReference(device.id.rawValue) {
 }
 ```
 
-`DeviceWindowToolbar` thêm `PhysicalDeviceBadge` với transport từ status và disable Boot/Shutdown/Erase/Delete/Record cho physical; tooltip lấy từ `PhysicalPresentation.unsupportedReasons`. `AppShell` row thêm badge `Physical` khi prefix physical (không cần transport vì row chỉ có `Device`). `DaemonClient` thêm:
+`DeviceToolbar` thêm `PhysicalDeviceBadge` với transport từ status và disable Boot/Shutdown/Erase/Delete/Record cho physical; tooltip lấy từ `PhysicalPresentation.unsupportedReasons`. `AppShell` row thêm badge `Physical` khi prefix physical (không cần transport vì row chỉ có `Device`). `DaemonClient` thêm:
 
 ```swift
 func physicalStatus(deviceID: DeviceID) async throws -> PhysicalDeviceStatus {

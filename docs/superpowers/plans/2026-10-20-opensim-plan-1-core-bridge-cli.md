@@ -339,6 +339,7 @@ public enum Platform: String, Codable, Sendable, CaseIterable {
     case watchOS
     case tvOS
     case visionOS
+    case android
     case unknown
 }
 
@@ -420,6 +421,9 @@ public struct Device: Codable, Sendable, Identifiable, Equatable {
         }
         if identifier.contains(".visionOS-") || identifier.contains(".xrOS-") {
             return .visionOS
+        }
+        if identifier.contains("system-images;android-") || identifier.contains(".android-") {
+            return .android
         }
         return .unknown
     }

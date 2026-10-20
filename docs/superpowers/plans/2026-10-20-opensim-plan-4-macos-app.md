@@ -95,7 +95,7 @@ Nếu Plan 2 đổi API trước khi implement, dừng task và báo lệch cont
 
 - Storage shell probe endpoint thật `GET /v1/storage/scans/00000000-0000-0000-0000-000000000000`; response có envelope nghĩa là service tồn tại. HTTP 404/405 là unavailable; lỗi transport là error state có Retry.
 - Không hiển thị byte hay scan giả; không tự tạo scan.
-- Performance không có shell trong Plan 4: `AppFeature.performance=false`, sidebar/view không tồn tại. Plan 5 nối metrics thật rồi bật flag và thay `StorageShellView` bằng `StorageTabView`.
+- Performance hidden trong Plan 4: `AppFeature.performance=false`; `.performance` case unreachable dùng `EmptyView`, sidebar không có row. Plan 5 nối metrics thật, bật flag và thay `EmptyView` bằng `PerformanceTabView`.
 - `DaemonClient` vẫn là struct `Sendable`; protocol app-side của Plan 5 phải là `Sendable`, không `AnyObject`/`@MainActor` class-bound.
 
 ### App DaemonClient và điểm nối Plan 5
@@ -388,14 +388,18 @@ schemes:
           parallelizable: false
 ```
 
+`App/Sources/OpenSimApp/App/AppFeature.swift`:
+
+```swift
+public enum AppFeature {
+    public static let performance = false
+}
+```
+
 `App/Sources/OpenSimApp/App/AppTab.swift`:
 
 ```swift
 import SwiftUI
-
-public enum AppFeature {
-    public static let performance = false
-}
 
 public enum AppTab: String, CaseIterable, Identifiable, Sendable {
     case devices, runtimes, storage, performance, activity
@@ -1476,15 +1480,15 @@ public enum KeyEvent: Sendable, Equatable {
     }
 ```
 
-`SimulatorScreenContainerView` thêm overlay; `overlay.isUserInteractionEnabled = model.canSendInput` và cập nhật khi `lease.state` đổi. `canSendInput` chỉ true khi `held` lease còn hạn; callbacks vẫn kiểm tra lại trong model, nên lease conflict/revoked không thể lọt input.
+`SimulatorScreenContainerView` thêm overlay **phía trên** `SimulatorScreenView` (`addSubview(overlay, positioned: .above, relativeTo: screenView)`). Overlay vẫn nhận event để báo `lease_required`, nhưng callbacks re-check `hasHeldControlLease` trong model và không gọi Bridge input khi chưa giữ lease. Không dùng API UIKit `isUserInteractionEnabled` trên `NSView`.
 
 ```swift
     private let overlay = InputOverlayView()
 
-    // trong init:
-    addSubview(overlay)
+    // trong configure, sau khi addSubview(screenView):
+    addSubview(overlay, positioned: .above, relativeTo: screenView)
 
-    // trong configure:
+    // callbacks:
     overlay.onTap = { [weak self] point in self?.forward(point) { .tap($0) } }
     overlay.onLongPress = { [weak self] point in self?.forward(point) { .longPress($0) } }
     overlay.onSwipe = { [weak self] start, end, duration in
@@ -2499,7 +2503,7 @@ struct StorageShellView: View {
 }
 ```
 
-`AppShell` case `.storage` dùng `StorageShellView(clientProvider: { environment.connection.client })`. Performance không có case view trong Plan 4: `AppFeature.performance=false`, sidebar và detail không tồn tại; Plan 5 thay bằng `PerformanceTabView` và bật flag.
+`AppShell` case `.storage` dùng `StorageShellView(clientProvider: { environment.connection.client })`. Case `.performance` unreachable dùng `EmptyView` khi flag false; Plan 5 thay bằng `PerformanceTabView` và bật flag.
 
 - [ ] **Step 4: Chạy để thấy pass**
 
@@ -2513,7 +2517,7 @@ Expected: `BUILD SUCCEEDED`; Storage hiện `unavailable` với message thật t
 - [ ] **Step 5: Commit**
 
 ```bash
-git add App/Sources/OpenSimApp/Shared/ServiceShellModel.swift App/Sources/OpenSimApp/Storage App/Sources/OpenSimApp/Performance App/Sources/OpenSimApp/App/AppShell.swift Tests/OpenSimAppUITests/ServiceShellUITests.swift
+git add App/Sources/OpenSimApp/Shared/ServiceShellModel.swift App/Sources/OpenSimApp/Storage App/Sources/OpenSimApp/App/AppShell.swift App/Sources/OpenSimApp/App/AppFeature.swift Tests/OpenSimAppUITests/ServiceShellUITests.swift
 git commit -m "feat(app): add storage and performance service shells"
 ```
 ---

@@ -78,12 +78,13 @@
 | `Sources/OpenSimDaemon/Metrics/MetricsHTTP.swift` | Controller/adapter HTTP read-only cho perf | Tạo |
 | `Sources/OpenSimDaemon/Metrics/MetricsOperationHandler.swift` | Map perf operation sang MetricsSampler | Tạo |
 | `Sources/OpenSimCore/Catalog/StoragePerformanceOperations.swift` | Đăng ký `storage`/`perf` vào catalog | Tạo |
+| `Sources/OpenSimCore/Catalog/OpenSimCatalog.swift` | Factory duy nhất `openSim()`; Plan 9/10 mở rộng additive | Tạo |
 | `Sources/OpenSimCLI/Commands/StorageCommand.swift` | `opensim storage scan/list/clean/reveal` | Tạo |
 | `Sources/OpenSimCLI/Commands/PerformanceCommand.swift` | `opensim perf top/watch/stats` | Tạo |
 | `Sources/OpenSimCLI/Output/StorageTable.swift` | Bảng text cho storage | Tạo |
 | `Sources/OpenSimCLI/Output/PerformanceTable.swift` | Bảng text cho perf | Tạo |
-| `Sources/OpenSimMCP/Tools/StorageTools.swift` | 3 tool storage | Tạo |
-| `Sources/OpenSimMCP/Tools/PerformanceTools.swift` | 2 tool perf | Tạo |
+| `Sources/OpenSimMCP/Tools/ToolCatalogAdapter.swift` | Sinh tool storage/perf từ catalog; không tool layer riêng | Đọc (Plan 3) |
+| `Sources/OpenSimDaemon/Runtime/DaemonRunner.swift` | Mount storage/perf route provider, start/stop sampler | Sửa (Plan 3) |
 | `App/Sources/OpenSimApp/Storage/StorageTabView.swift` | Tab Storage thật | Tạo |
 | `App/Sources/OpenSimApp/Storage/StorageTabModel.swift` | State, scan, plan, apply | Tạo |
 | `App/Sources/OpenSimApp/Storage/StorageItemTable.swift` | `Table` item native; thay chart/card | Tạo |
@@ -98,7 +99,7 @@
 | `App/Sources/OpenSimApp/App/AppFeature.swift` | Bật `performance` sau khi nối metrics | Sửa (Plan 4) |
 | `App/Sources/OpenSimApp/App/DaemonClient.swift` | Thêm method storage/perf | Sửa (Plan 4) |
 | `Sources/OpenSimDaemon/Server/DaemonServer.swift` | Gọi adapter route storage/perf | Sửa (Plan 3) |
-| `Sources/OpenSimDaemon/Server/SSEHub.swift` | Dùng `broadcast` sẵn có | Đọc (Plan 3) |
+| `Sources/OpenSimDaemon/Events/EventHub.swift` | Dùng `publish` sẵn có | Đọc (Plan 3) |
 | `Tests/OpenSimCoreTests/StorageItemIDTests.swift` | ID ổn định | Tạo |
 | `Tests/OpenSimCoreTests/StorageSafetyTests.swift` | Bảng safe/unsafe | Tạo |
 | `Tests/OpenSimCoreTests/MetricsThresholdsTests.swift` | Ngưỡng và warning | Tạo |
@@ -2600,6 +2601,7 @@ Append vào `Tests/OpenSimDaemonTests/StorageScannerTests.swift`:
         }
         func installRuntime(at path: String) async throws -> Runtime { runtimes[0] }
         func deleteRuntime(_ id: RuntimeID) async throws {}
+        func verifyRuntime(_ id: RuntimeID) async throws {}
     }
 
     private struct FakeAppControl: AppControlling {
@@ -4852,10 +4854,50 @@ git add Sources/OpenSimProtocol/StorageMessages.swift Sources/OpenSimDaemon/Stor
 git commit -m "feat(storage): add storage service, HTTP controller and SSE"
 ```
 
+### Task 9A: DaemonRunner wiring storage/perf
+
+**Files:**
+- Modify: `Sources/OpenSimDaemon/Runtime/DaemonRunner.swift`, `Sources/OpenSimDaemon/Storage/StorageHTTPAdapter.swift`, `Sources/OpenSimDaemon/Metrics/MetricsHTTP.swift`
+- Test: `Tests/IntegrationTests/StorageIntegrationTests.swift`, `Tests/IntegrationTests/MetricsIntegrationTests.swift`
+
+**Interfaces:**
+- Consumes: `DaemonRunConfiguration.routeProviders`, `StorageService`, `MetricsSampler`, `EventHub`.
+- Produces: `StorageRouteProvider`, `MetricsRouteProvider`; sampler lifecycle; real HTTP endpoints.
+
+- [ ] **Step 1: Viết HTTP test thất bại**
+
+```swift
+func testDaemonMountsStorageAndPerfRoutes() async throws {
+    let baseURL = try await startTestDaemon()
+    let storage = try await HTTP.get("\(baseURL)/v1/storage/scans/00000000-0000-0000-0000-000000000000")
+    XCTAssertNotEqual(storage.status, 404)
+    let perf = try await HTTP.get("\(baseURL)/v1/perf/devices")
+    XCTAssertEqual(perf.status, 200)
+}
+```
+
+- [ ] **Step 2: Implement**
+
+- Trong `DaemonRunner`, tạo `StorageService` và `MetricsSampler` từ bridge/metadata/fileSystem đã có; append `StorageRouteProvider`/`MetricsRouteProvider` vào `configuration.routeProviders` trước `DaemonServer.start`.
+- Gọi `metrics.start()` khi `AppFeature.performance` bật; `defer { metrics.stop() }`/shutdown hook. Không để sampler chỉ tồn tại trong test.
+- `StorageHTTPAdapter`/`MetricsHTTP` là route provider của Plan 3; không thêm nhánh 404 thủ công, không tạo server thứ hai.
+- Test chạy daemon thật (không mock) với home tạm; assert route không 404 và perf trả envelope.
+
+- [ ] **Step 3: Chạy + commit**
+
+```bash
+swift test --filter IntegrationTests.StorageIntegrationTests
+swift test --filter IntegrationTests.MetricsIntegrationTests
+git add Sources/OpenSimDaemon/Runtime/DaemonRunner.swift Sources/OpenSimDaemon/Storage/StorageHTTPAdapter.swift Sources/OpenSimDaemon/Metrics/MetricsHTTP.swift Tests/IntegrationTests
+git commit -m "feat(daemon): mount storage and metrics routes"
+```
+---
+
 ### Task 10: Command catalog và CLI storage
 
 **Files:**
 - Create: `Sources/OpenSimCore/Catalog/StoragePerformanceOperations.swift`
+- Create: `Sources/OpenSimCore/Catalog/OpenSimCatalog.swift` (`openSim()` factory)
 - Create: `Sources/OpenSimCLI/Output/StorageTable.swift`
 - Create: `Sources/OpenSimCLI/Commands/StorageCommand.swift`
 - Create: `Tests/OpenSimCLITests/Support/GoldenDocument.swift`
@@ -4864,7 +4906,7 @@ git commit -m "feat(storage): add storage service, HTTP controller and SSE"
 
 **Interfaces:**
 - Consumes: `Operation`, `OperationCatalog`, `OperationParameter`, `StorageScan`, `StorageItem`, `CleanPlanDetail`, `CleanApplyResult`.
-- Produces: `OperationCatalog.registerStoragePerformanceOperations()`, `OperationExecuting`, `StorageCommandRunner`, `StorageJSON.envelope(data:requestID:durationMs:)`, `StorageTable.render(scan:)`, `GoldenDocument.load(_:)`, `GoldenDocument.canonicalize(_:)`.
+- Produces: `OperationCatalog.registerStoragePerformanceOperations()`, `OperationCatalog.openSim()`, `OperationExecuting`, `StorageCommandRunner`, `StorageJSON.envelope(data:requestID:durationMs:)`, `StorageTable.render(scan:)`, `GoldenDocument.load(_:)`, `GoldenDocument.canonicalize(_:)`.
 
 - [ ] **Step 1: Viết test golden thất bại**
 
@@ -5394,7 +5436,7 @@ extension DaemonClient: OperationExecuting {
 
 `StorageCommandRunner` và test không phụ thuộc client cụ thể.
 
-Thêm factory duy nhất trong `StoragePerformanceOperations.swift`:
+`StoragePerformanceOperations.swift` chỉ chứa `registerStoragePerformanceOperations()` (metadata storage/perf). Factory nằm trong `OpenSimCatalog.swift`:
 
 ```swift
 public extension OperationCatalog {
@@ -5403,10 +5445,14 @@ public extension OperationCatalog {
         catalog.registerStoragePerformanceOperations()
         return catalog
     }
+
+    static func openSim() -> OperationCatalog {
+        plan5()
+    }
 }
 ```
 
-Sau đó Plan 5 sửa composition thực tế của daemon (`DaemonRunner`), CLI daemon backend và MCP handler từ `plan3()` sang `plan5()`; Plan 7/9 dùng cùng factory, không gọi `registerUIOperations()`/hook tưởng tượng. Test catalog phải assert có đồng thời `ui_tap`, `storage_scan`, `perf_devices`.
+`openSim()` là factory duy nhất từ Plan 5 trở đi. Plan 7/9/10 không tạo factory mới: Plan 9 thêm physical vào `openSim()`, Plan 10 thêm Android vào cùng function. `plan5()` chỉ là base nội bộ; daemon/CLI/MCP và release gate dùng `openSim()`. Test catalog phải assert có đồng thời `ui_tap`, `storage_scan`, `perf_devices`.
 
 - [ ] **Step 5: Chạy test để thấy pass**
 
@@ -5421,25 +5467,23 @@ Expected: PASS 2 test. Golden so sánh canonical JSON; nếu khác, đọc diff 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add Sources/OpenSimCore/Catalog/StoragePerformanceOperations.swift Sources/OpenSimCLI/Output/StorageTable.swift Sources/OpenSimCLI/Commands/StorageCommand.swift Tests/OpenSimCLITests/Support/GoldenDocument.swift Tests/OpenSimCLITests/Goldens/storage-scan.json Tests/OpenSimCLITests/StorageCommandTests.swift
+git add Sources/OpenSimCore/Catalog/StoragePerformanceOperations.swift Sources/OpenSimCore/Catalog/OpenSimCatalog.swift Sources/OpenSimCLI/Output/StorageTable.swift Sources/OpenSimCLI/Commands/StorageCommand.swift Tests/OpenSimCLITests/Support/GoldenDocument.swift Tests/OpenSimCLITests/Goldens/storage-scan.json Tests/OpenSimCLITests/StorageCommandTests.swift
 git commit -m "feat(cli): add storage command with JSON golden"
 ```
 
 ---
 
-### Task 11: MCP storage tools
+### Task 11: MCP storage tools qua operation catalog
 
 **Files:**
-- Create: `Sources/OpenSimMCP/Tools/StorageTools.swift`
+- Modify: `Sources/OpenSimMCP/MCPHandler.swift`, `Sources/OpenSimMCP/ToolCatalogAdapter.swift`
 - Test: `Tests/OpenSimMCPTests/StorageToolsTests.swift`
 
 **Interfaces:**
-- Consumes: `OperationExecuting` từ Task 10; `OpenSimError`.
-- Produces: `StorageToolSpec`, `MCPScalar`, `StorageTools.specs`, `StorageTools.call(name:arguments:)`.
+- Consumes: `OperationCatalog.openSim()`, `ToolCatalogAdapter`, `MCPHandler`, `OperationDispatcher`.
+- Produces: `tools/list` và `tools/call` cho `storage_scan`, `storage_list`, `storage_clean`; không có `StorageToolSpec` song song.
 
-- [ ] **Step 1: Viết test thất bại**
-
-Create `Tests/OpenSimMCPTests/StorageToolsTests.swift`:
+- [ ] **Step 1: Viết test catalog-first**
 
 ```swift
 import XCTest
@@ -5447,261 +5491,30 @@ import XCTest
 @testable import OpenSimCore
 
 final class StorageToolsTests: XCTestCase {
-    private actor RecordingClient: OperationExecuting {
-        var operations: [String] = []
-        var parameters: [[String: String]] = []
-        var payload: Data = Data("{\"ok\":true}".utf8)
-
-        func execute(operation: String, parameters: [String: String]) async throws -> Data {
-            operations.append(operation)
-            self.parameters.append(parameters)
-            return payload
-        }
-    }
-
-    func testToolNamesAndDestructiveFlag() {
-        let names = StorageTools.specs.map(\.name)
-        XCTAssertEqual(names, ["storage_scan", "storage_list", "storage_clean"])
-        XCTAssertTrue(StorageTools.specs.first { $0.name == "storage_clean" }?.destructive ?? false)
-        XCTAssertFalse(StorageTools.specs.first { $0.name == "storage_scan" }?.destructive ?? true)
-    }
-
-    func testCleanWithoutConfirmationFailsBeforeCallingDaemon() async throws {
-        let client = RecordingClient()
-        let tools = StorageTools(client: client)
-
-        do {
-            _ = try await tools.call(
-                name: "storage_clean",
-                arguments: [
-                    "scanId": .string("scan-1"),
-                    "itemIds": .list(["archive-item"])
-                ]
-            )
-            XCTFail("clean without confirmation must fail")
-        } catch let error as OpenSimError {
-            XCTAssertEqual(error.code, "confirmation_required")
-        }
-        let operations = await client.operations
-        XCTAssertTrue(operations.isEmpty)
-    }
-
-    func testCleanWithPlanTokenAppliesAndPassesParameters() async throws {
-        let client = RecordingClient()
-        let tools = StorageTools(client: client)
-
-        _ = try await tools.call(
-            name: "storage_clean",
-            arguments: [
-                "itemIds": .list(["archive-item"]),
-                "planToken": .string("token-1"),
-                "confirmationPhrase": .string("ARCHIVES")
-            ]
-        )
-
-        let operations = await client.operations
-        XCTAssertEqual(operations, ["storage_clean"])
-        let parameters = await client.parameters
-        XCTAssertEqual(parameters.first?["planToken"], "token-1")
-        XCTAssertEqual(parameters.first?["confirmationPhrase"], "ARCHIVES")
-        XCTAssertEqual(parameters.first?["itemIds"], "archive-item")
-    }
-
-    func testScanForwardsCategoryFilter() async throws {
-        let client = RecordingClient()
-        let tools = StorageTools(client: client)
-
-        _ = try await tools.call(
-            name: "storage_scan",
-            arguments: [
-                "refresh": .bool(true),
-                "categories": .list(["archive", "derivedData"])
-            ]
-        )
-
-        let parameters = await client.parameters
-        XCTAssertEqual(parameters.first?["refresh"], "true")
-        XCTAssertEqual(parameters.first?["categories"], "archive,derivedData")
+    func testStorageToolsComeFromCatalog() {
+        let tools = ToolCatalogAdapter.tools(from: OperationCatalog.openSim())
+        let names = Set(tools.map(\.name))
+        XCTAssertTrue(names.isSuperset(of: ["storage_scan", "storage_list", "storage_clean"]))
+        XCTAssertTrue(tools.first { $0.name == "storage_clean" }?.destructive ?? false)
     }
 }
 ```
 
-- [ ] **Step 2: Chạy test để thấy fail**
+- [ ] **Step 2: Implement**
 
-Run:
+- Không tạo `StorageTools.specs`/`StorageTools.call`; `ToolCatalogAdapter` sinh schema từ `Operation` metadata.
+- `MCPHandler` route `storage_*` qua `OperationDispatcher` và daemon client; không hardcode danh sách tool.
+- `storage_scan`/`storage_list` read; `storage_clean` destructive cần `confirm` hoặc `planToken`; dry-run được phép trước confirm.
+- MCP tool names phải khớp `OpenSimCatalog.openSim()`; test `tools/list` từ daemon thật, không chỉ unit catalog.
+
+- [ ] **Step 3: Chạy test + commit**
 
 ```bash
 swift test --filter OpenSimMCPTests.StorageToolsTests
+git add Sources/OpenSimMCP Tests/OpenSimMCPTests/StorageToolsTests.swift
+git commit -m "feat(mcp): expose storage tools from operation catalog"
 ```
-
-Expected: FAIL vì `StorageTools` chưa tồn tại.
-
-- [ ] **Step 3: Viết tool adapter**
-
-Create `Sources/OpenSimMCP/Tools/StorageTools.swift`:
-
-```swift
-import Foundation
-import OpenSimCore
-
-public enum MCPScalar: Sendable, Equatable {
-    case string(String)
-    case bool(Bool)
-    case int(Int)
-    case list([String])
-}
-
-public struct StorageToolSpec: Sendable, Equatable {
-    public var name: String
-    public var description: String
-    public var inputSchema: String
-    public var destructive: Bool
-
-    public init(name: String, description: String, inputSchema: String, destructive: Bool) {
-        self.name = name
-        self.description = description
-        self.inputSchema = inputSchema
-        self.destructive = destructive
-    }
-}
-
-public struct StorageTools: Sendable {
-    public static let specs: [StorageToolSpec] = [
-        StorageToolSpec(
-            name: "storage_scan",
-            description: "Scan simulator, Xcode and runtime storage. Returns a scan id and summary.",
-            inputSchema: """
-            {"type":"object","properties":{"roots":{"type":"array","items":{"type":"string"}},"refresh":{"type":"boolean"},"includeAppContainers":{"type":"boolean"}}}
-            """,
-            destructive: false
-        ),
-        StorageToolSpec(
-            name: "storage_list",
-            description: "List storage items from a completed scan.",
-            inputSchema: """
-            {"type":"object","required":["scanId"],"properties":{"scanId":{"type":"string"},"parent":{"type":"string"}}}
-            """,
-            destructive: false
-        ),
-        StorageToolSpec(
-            name: "storage_clean",
-            description: "Plan or apply a storage clean. Requires confirm=true or planToken from a dry run.",
-            inputSchema: """
-            {"type":"object","required":["itemIds"],"properties":{"scanId":{"type":"string"},"itemIds":{"type":"array","items":{"type":"string"}},"planToken":{"type":"string"},"confirmationPhrase":{"type":"string"},"dryRun":{"type":"boolean"},"confirm":{"type":"boolean"}}}
-            """,
-            destructive: true
-        )
-    ]
-
-    private let client: any OperationExecuting
-
-    public init(client: any OperationExecuting) {
-        self.client = client
-    }
-
-    public func call(name: String, arguments: [String: MCPScalar]) async throws -> Data {
-        switch name {
-        case "storage_scan":
-            var parameters = ["refresh": arguments.string("refresh") ?? "false"]
-            if let categories = arguments.list("categories") {
-                parameters["categories"] = categories.joined(separator: ",")
-            }
-            if let include = arguments.string("includeAppContainers") {
-                parameters["includeAppContainers"] = include
-            }
-            return try await client.execute(operation: "storage_scan", parameters: parameters)
-        case "storage_list":
-            guard let scanID = arguments.string("scanId") else {
-                throw Self.invalid("scanId is required")
-            }
-            var parameters = ["scanId": scanID]
-            if let parent = arguments.string("parent") {
-                parameters["parent"] = parent
-            }
-            return try await client.execute(operation: "storage_list", parameters: parameters)
-        case "storage_clean":
-            guard let itemIDs = arguments.list("itemIds"), !itemIDs.isEmpty else {
-                throw Self.invalid("itemIds is required")
-            }
-            var parameters = ["itemIds": itemIDs.joined(separator: ",")]
-            let planToken = arguments.string("planToken")
-            let confirm = arguments.bool("confirm") ?? false
-            if planToken == nil, !confirm {
-                throw OpenSimError(
-                    code: "confirmation_required",
-                    message: "storage_clean requires confirm=true or planToken",
-                    details: ["tool": "storage_clean"],
-                    recovery: "Run storage_clean with dryRun=true, then apply with the plan token",
-                    retryable: false
-                )
-            }
-            if let planToken {
-                parameters["planToken"] = planToken
-            }
-            if let phrase = arguments.string("confirmationPhrase") {
-                parameters["confirmationPhrase"] = phrase
-            }
-            if arguments.bool("dryRun") ?? false {
-                parameters["dryRun"] = "true"
-                parameters["confirm"] = "false"
-            } else {
-                parameters["confirm"] = "true"
-            }
-            return try await client.execute(operation: "storage_clean", parameters: parameters)
-        default:
-            throw Self.invalid("Unknown storage tool \(name)")
-        }
-    }
-
-    private static func invalid(_ message: String) -> OpenSimError {
-        OpenSimError(
-            code: "invalid_argument",
-            message: message,
-            details: [:],
-            recovery: "Check the tool schema and retry",
-            retryable: false
-        )
-    }
-}
-
-private extension Dictionary where Key == String, Value == MCPScalar {
-    func string(_ key: String) -> String? {
-        if case let .string(value)? = self[key] { return value }
-        if case let .bool(value)? = self[key] { return value ? "true" : "false" }
-        if case let .int(value)? = self[key] { return String(value) }
-        return nil
-    }
-
-    func bool(_ key: String) -> Bool? {
-        guard case let .bool(value)? = self[key] else { return nil }
-        return value
-    }
-
-    func list(_ key: String) -> [String]? {
-        guard case let .list(value)? = self[key] else { return nil }
-        return value
-    }
-}
-```
-
-Nối vào MCP registry của Plan 3: đăng ký từng `StorageTools.specs`, chuyển `inputSchema` thành JSON schema của Plan 3, và gọi `StorageTools.call` trong handler. Không thêm tool ngoài ba tên trong spec.
-
-- [ ] **Step 4: Chạy test để thấy pass**
-
-Run:
-
-```bash
-swift test --filter OpenSimMCPTests.StorageToolsTests
-```
-
-Expected: PASS 4 test.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add Sources/OpenSimMCP/Tools/StorageTools.swift Tests/OpenSimMCPTests/StorageToolsTests.swift
-git commit -m "feat(mcp): add storage tools with destructive gate"
-```
+---
 
 ### Task 12: Process sampling và mapping theo UDID
 
@@ -6931,472 +6744,45 @@ git add Sources/OpenSimCore/Metrics/MetricsThresholds.swift Sources/OpenSimDaemo
 git commit -m "feat(metrics): add sampler, ring buffer, thresholds and perf HTTP"
 ```
 
-### Task 14: CLI perf và MCP perf tools
+### Task 14: CLI perf và MCP perf tools qua catalog
 
 **Files:**
 - Create: `Sources/OpenSimCLI/Output/PerformanceTable.swift`
 - Create: `Sources/OpenSimCLI/Commands/PerformanceCommand.swift`
 - Create: `Sources/OpenSimDaemon/Metrics/MetricsOperationHandler.swift`
-- Create: `Sources/OpenSimMCP/Tools/PerformanceTools.swift`
 - Create: `Tests/OpenSimCLITests/Goldens/perf-top.json`
 - Test: `Tests/OpenSimCLITests/PerformanceCommandTests.swift`
 - Test: `Tests/OpenSimMCPTests/PerformanceToolsTests.swift`
 
 **Interfaces:**
-- Consumes: `OperationExecuting`, `StorageJSON` từ Task 10; `DeviceMetricsSnapshot`, `ProcessSample`.
-- Produces: `PerformanceCommandRunner`, `PerformanceTable.render(snapshots:)`, `PerformanceTools.specs`, `PerformanceTools.call(name:arguments:)`.
+- Consumes: `OperationCatalog.openSim()`, `ToolCatalogAdapter`, `OperationExecuting`; `DeviceMetricsSnapshot`, `ProcessSample`.
+- Produces: `PerformanceCommandRunner`, `PerformanceTable.render(snapshots:)`; MCP perf tools do catalog sinh ra, không `PerformanceTools` riêng.
 
-- [ ] **Step 1: Viết test golden thất bại**
-
-Create `Tests/OpenSimCLITests/Goldens/perf-top.json`:
-
-```json
-{
-  "schemaVersion": 1,
-  "ok": true,
-  "data": [
-    {
-      "sample": {
-        "deviceID": {
-          "rawValue": "11111111-2222-3333-4444-555555555555"
-        },
-        "timestamp": "2026-10-20T10:00:00Z",
-        "cpuPercent": 42.5,
-        "memoryBytes": 536870912,
-        "processCount": 3,
-        "diskReadBytes": 4096,
-        "diskWriteBytes": 2048
-      },
-      "processes": [
-        {
-          "pid": 4242,
-          "parentPID": 4200,
-          "name": "MyApp",
-          "cpuPercent": 20,
-          "memoryBytes": 268435456
-        }
-      ],
-      "warnings": [],
-      "coreCount": 12
-    }
-  ],
-  "error": null,
-  "meta": {
-    "requestId": "req-fixed",
-    "durationMs": 0
-  }
-}
-```
-
-Create `Tests/OpenSimCLITests/PerformanceCommandTests.swift`:
+- [ ] **Step 1: Viết golden + catalog test**
 
 ```swift
-import XCTest
-@testable import OpenSimCLI
-@testable import OpenSimCore
-
-final class PerformanceCommandTests: XCTestCase {
-    private struct FakeClient: OperationExecuting {
-        var payload: Data
-        func execute(operation: String, parameters: [String: String]) async throws -> Data { payload }
-    }
-
-    private func fixtureSnapshot() -> DeviceMetricsSnapshot {
-        let deviceID = DeviceID(rawValue: "11111111-2222-3333-4444-555555555555")
-        let sample = MetricSample(
-            deviceID: deviceID,
-            timestamp: ISO8601DateFormatter().date(from: "2026-10-20T10:00:00Z") ?? Date(),
-            cpuPercent: 42.5,
-            memoryBytes: 536_870_912,
-            processCount: 3,
-            diskReadBytes: 4_096,
-            diskWriteBytes: 2_048
-        )
-        let process = ProcessSample(
-            pid: 4_242,
-            parentPID: 4_200,
-            name: "MyApp",
-            cpuPercent: 20,
-            memoryBytes: 268_435_456
-        )
-        return DeviceMetricsSnapshot(sample: sample, processes: [process], warnings: [], coreCount: 12)
-    }
-
-    func testTopJSONMatchesGolden() async throws {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        let client = FakeClient(payload: try encoder.encode([fixtureSnapshot()]))
-        let runner = PerformanceCommandRunner(client: client, requestID: { "req-fixed" }, durationMs: { 0 })
-
-        let output = try await runner.top(device: nil, json: true)
-        let expected = try GoldenDocument.load("perf-top.json")
-
-        XCTAssertEqual(
-            try GoldenDocument.canonicalize(Data(output.utf8)),
-            try GoldenDocument.canonicalize(expected)
-        )
-    }
-
-    func testTopTableContainsCPUAndMemory() async throws {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        let client = FakeClient(payload: try encoder.encode([fixtureSnapshot()]))
-        let runner = PerformanceCommandRunner(client: client)
-
-        let output = try await runner.top(device: nil, json: false)
-
-        XCTAssertTrue(output.contains("42.5"))
-        XCTAssertTrue(output.contains("512"))
-        XCTAssertTrue(output.contains("MyApp") == false)
-    }
+func testPerfToolsComeFromCatalog() {
+    let tools = ToolCatalogAdapter.tools(from: OperationCatalog.openSim())
+    let names = Set(tools.map(\.name))
+    XCTAssertTrue(names.isSuperset(of: ["perf_devices", "perf_processes"]))
 }
 ```
 
-- [ ] **Step 2: Chạy test để thấy fail**
+- [ ] **Step 2: Implement CLI và operation handler**
 
-Run:
+- `PerformanceCommandRunner` dùng `StorageJSON`/envelope sẵn có; `perf top/watch/stats` gọi `perf_devices`/`perf_processes`.
+- `MetricsOperationHandler` map operation catalog sang `MetricsSampler`; route qua `OperationDispatcher`.
+- Không tạo `PerformanceTools.specs`; `ToolCatalogAdapter` đọc metadata `perf_*`.
+- Test `tools/list` qua MCP thật và CLI golden; `perf_devices` không trả mock data.
 
-```bash
-swift test --filter OpenSimCLITests.PerformanceCommandTests
-```
-
-Expected: FAIL vì `PerformanceCommandRunner` chưa tồn tại.
-
-- [ ] **Step 3: Viết table, runner và command**
-
-Create `Sources/OpenSimCLI/Output/PerformanceTable.swift`:
-
-```swift
-import Foundation
-import OpenSimCore
-
-public enum PerformanceTable {
-    public static func render(snapshots: [DeviceMetricsSnapshot]) -> String {
-        var lines: [String] = []
-        lines.append("DEVICE                                CPU%    RAM        PROCS  WARN")
-        for snapshot in snapshots {
-            let memory = ByteCountFormatter.string(
-                fromByteCount: Int64(snapshot.sample.memoryBytes),
-                countStyle: .memory
-            )
-            let warn = snapshot.warnings.map(\.kind.rawValue).joined(separator: ",")
-            lines.append(
-                "\(snapshot.sample.deviceID.rawValue.padding(toLength: 36, withPad: " ", startingAt: 0)) \(String(format: "%6.1f", snapshot.sample.cpuPercent))  \(memory.padding(toLength: 9, withPad: " ", startingAt: 0))  \(snapshot.sample.processCount)      \(warn)"
-            )
-        }
-        return lines.joined(separator: "\n")
-    }
-
-    public static func render(processes: [ProcessSample]) -> String {
-        var lines: [String] = ["PID      PPID     CPU%    MEM        NAME"]
-        for process in processes {
-            let memory = ByteCountFormatter.string(
-                fromByteCount: Int64(process.memoryBytes),
-                countStyle: .memory
-            )
-            lines.append(
-                "\(String(process.pid).padding(toLength: 8, withPad: " ", startingAt: 0)) \(String(process.parentPID).padding(toLength: 8, withPad: " ", startingAt: 0)) \(String(format: "%6.1f", process.cpuPercent))  \(memory.padding(toLength: 9, withPad: " ", startingAt: 0))  \(process.name)"
-            )
-        }
-        return lines.joined(separator: "\n")
-    }
-}
-```
-
-Create `Sources/OpenSimCLI/Commands/PerformanceCommand.swift`:
-
-```swift
-import ArgumentParser
-import Foundation
-import OpenSimCore
-import OpenSimDaemon
-
-public struct PerformanceCommandRunner: Sendable {
-    private let client: any OperationExecuting
-    private let requestID: @Sendable () -> String
-    private let durationMs: @Sendable () -> Int
-
-    public init(
-        client: any OperationExecuting,
-        requestID: @escaping @Sendable () -> String = { UUID().uuidString },
-        durationMs: @escaping @Sendable () -> Int = { 0 }
-    ) {
-        self.client = client
-        self.requestID = requestID
-        self.durationMs = durationMs
-    }
-
-    public func top(device: String?, json: Bool) async throws -> String {
-        var parameters: [String: String] = [:]
-        if let device { parameters["device"] = device }
-        let data = try await client.execute(operation: "perf_devices", parameters: parameters)
-        if json {
-            return try StorageJSON.envelope(data: data, requestID: requestID(), durationMs: durationMs())
-        }
-        let snapshots = try JSONDecoder.iso.decode([DeviceMetricsSnapshot].self, from: data)
-        return PerformanceTable.render(snapshots: snapshots)
-    }
-
-    public func stats(device: String, json: Bool) async throws -> String {
-        let data = try await client.execute(
-            operation: "perf_processes",
-            parameters: ["device": device]
-        )
-        if json {
-            return try StorageJSON.envelope(data: data, requestID: requestID(), durationMs: durationMs())
-        }
-        let processes = try JSONDecoder.iso.decode([ProcessSample].self, from: data)
-        return PerformanceTable.render(processes: processes)
-    }
-
-    public func watch(device: String?, interval: Int, limit: Int) async throws -> String {
-        var lines: [String] = []
-        let since = ISO8601DateFormatter().string(from: Date())
-        for _ in 0 ..< limit {
-            var parameters = ["since": since]
-            if let device { parameters["device"] = device }
-            let data = try await client.execute(operation: "perf_devices", parameters: parameters)
-            let snapshots = try JSONDecoder.iso.decode([DeviceMetricsSnapshot].self, from: data)
-            lines.append(PerformanceTable.render(snapshots: snapshots))
-            try await Task.sleep(for: .seconds(interval))
-        }
-        return lines.joined(separator: "\n")
-    }
-}
-
-public struct PerformanceCommand: AsyncParsableCommand {
-    public static let configuration = CommandConfiguration(
-        commandName: "perf",
-        abstract: "Read CPU, memory and process metrics for simulator devices",
-        subcommands: [Top.self, Stats.self, Watch.self]
-    )
-
-    public init() {}
-
-    public struct Top: AsyncParsableCommand {
-        @Option(name: .long) var device: String?
-        @Flag(name: .long) var json = false
-
-        public init() {}
-
-        public func run() async throws {
-            let runner = PerformanceCommandRunner(client: try await DaemonLauncher.ensureRunning())
-            print(try await runner.top(device: device, json: json))
-        }
-    }
-
-    public struct Stats: AsyncParsableCommand {
-        @Option(name: .long) var device: String
-        @Flag(name: .long) var json = false
-
-        public init() {}
-
-        public func run() async throws {
-            let runner = PerformanceCommandRunner(client: try await DaemonLauncher.ensureRunning())
-            print(try await runner.stats(device: device, json: json))
-        }
-    }
-
-    public struct Watch: AsyncParsableCommand {
-        @Option(name: .long) var device: String?
-        @Option(name: .long) var interval: Int = 1
-        @Option(name: .long) var samples: Int = 5
-
-        public init() {}
-
-        public func run() async throws {
-            let runner = PerformanceCommandRunner(client: try await DaemonLauncher.ensureRunning())
-            print(try await runner.watch(device: device, interval: interval, limit: samples))
-        }
-    }
-}
-```
-
-- [ ] **Step 4: Viết metrics operation handler**
-
-Create `Sources/OpenSimDaemon/Metrics/MetricsOperationHandler.swift`:
-
-```swift
-import Foundation
-import OpenSimCore
-import OpenSimProtocol
-
-public struct MetricsOperationHandler: Sendable {
-    private let sampler: MetricsSampler
-    private let encoder: JSONEncoder
-
-    public init(sampler: MetricsSampler) {
-        self.sampler = sampler
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        self.encoder = encoder
-    }
-
-    public func handle(_ request: OperationRequest) async throws -> Data {
-        switch request.operation {
-        case "perf_devices":
-            let since = request.parameters["since"].flatMap { ISO8601DateFormatter().date(from: $0) }
-            return try encoder.encode(await sampler.snapshots(since: since))
-        case "perf_processes":
-            guard let raw = request.parameters["device"] else {
-                throw OpenSimError(
-                    code: "invalid_argument",
-                    message: "device is required",
-                    details: [:],
-                    recovery: "Pass a device UDID or name",
-                    retryable: false
-                )
-            }
-            return try encoder.encode(await sampler.processes(deviceID: DeviceID(rawValue: raw)))
-        default:
-            throw OpenSimError(
-                code: "invalid_argument",
-                message: "Unknown performance operation \(request.operation)",
-                details: [:],
-                recovery: nil,
-                retryable: false
-            )
-        }
-    }
-}
-```
-
-Đăng ký `MetricsOperationHandler` vào cùng `serviceHandlers` của `OperationDispatcher` với hai key `perf_devices`, `perf_processes`.
-
-- [ ] **Step 5: Viết MCP perf tools**
-
-Create `Sources/OpenSimMCP/Tools/PerformanceTools.swift`:
-
-```swift
-import Foundation
-import OpenSimCore
-
-public struct PerformanceTools: Sendable {
-    public static let specs: [StorageToolSpec] = [
-        StorageToolSpec(
-            name: "perf_devices",
-            description: "Read recent CPU, memory, process count and disk samples per device.",
-            inputSchema: """
-            {"type":"object","properties":{"since":{"type":"string"},"device":{"type":"string"}}}
-            """,
-            destructive: false
-        ),
-        StorageToolSpec(
-            name: "perf_processes",
-            description: "List processes mapped to a simulator device.",
-            inputSchema: """
-            {"type":"object","required":["device"],"properties":{"device":{"type":"string"}}}
-            """,
-            destructive: false
-        )
-    ]
-
-    private let client: any OperationExecuting
-
-    public init(client: any OperationExecuting) {
-        self.client = client
-    }
-
-    public func call(name: String, arguments: [String: MCPScalar]) async throws -> Data {
-        guard let spec = Self.specs.first(where: { $0.name == name }) else {
-            throw OpenSimError(
-                code: "invalid_argument",
-                message: "Unknown perf tool \(name)",
-                details: [:],
-                recovery: "Use perf_devices or perf_processes",
-                retryable: false
-            )
-        }
-        var parameters: [String: String] = [:]
-        if case let .string(since)? = arguments["since"] {
-            parameters["since"] = since
-        }
-        if case let .string(device)? = arguments["device"] {
-            parameters["device"] = device
-        }
-        if spec.name == "perf_processes", parameters["device"] == nil {
-            throw OpenSimError(
-                code: "invalid_argument",
-                message: "device is required for perf_processes",
-                details: [:],
-                recovery: "Pass a device UDID or name",
-                retryable: false
-            )
-        }
-        return try await client.execute(operation: spec.name, parameters: parameters)
-    }
-}
-```
-
-- [ ] **Step 6: Viết MCP perf test**
-
-Create `Tests/OpenSimMCPTests/PerformanceToolsTests.swift`:
-
-```swift
-import XCTest
-@testable import OpenSimMCP
-@testable import OpenSimCore
-
-final class PerformanceToolsTests: XCTestCase {
-    private actor RecordingClient: OperationExecuting {
-        var operations: [String] = []
-        var parameters: [[String: String]] = []
-
-        func execute(operation: String, parameters: [String: String]) async throws -> Data {
-            operations.append(operation)
-            self.parameters.append(parameters)
-            return Data("{}".utf8)
-        }
-    }
-
-    func testSpecsMatchSpecCatalog() {
-        XCTAssertEqual(PerformanceTools.specs.map(\.name), ["perf_devices", "perf_processes"])
-        XCTAssertFalse(PerformanceTools.specs.contains { $0.destructive })
-    }
-
-    func testPerfProcessesRequiresDevice() async throws {
-        let tools = PerformanceTools(client: RecordingClient())
-        do {
-            _ = try await tools.call(name: "perf_processes", arguments: [:])
-            XCTFail("device must be required")
-        } catch let error as OpenSimError {
-            XCTAssertEqual(error.code, "invalid_argument")
-        }
-    }
-
-    func testPerfDevicesForwardsSince() async throws {
-        let client = RecordingClient()
-        let tools = PerformanceTools(client: client)
-        _ = try await tools.call(
-            name: "perf_devices",
-            arguments: ["since": .string("2026-10-20T10:00:00Z")]
-        )
-        let operations = await client.operations
-        let parameters = await client.parameters
-        XCTAssertEqual(operations, ["perf_devices"])
-        XCTAssertEqual(parameters.first?["since"], "2026-10-20T10:00:00Z")
-    }
-}
-```
-
-- [ ] **Step 7: Chạy test để thấy pass**
-
-Run:
+- [ ] **Step 3: Chạy test + commit**
 
 ```bash
 swift test --filter OpenSimCLITests.PerformanceCommandTests
 swift test --filter OpenSimMCPTests.PerformanceToolsTests
+git add Sources/OpenSimCLI/Output/PerformanceTable.swift Sources/OpenSimCLI/Commands/PerformanceCommand.swift Sources/OpenSimDaemon/Metrics/MetricsOperationHandler.swift Tests/OpenSimCLITests/Goldens/perf-top.json Tests/OpenSimCLITests/PerformanceCommandTests.swift Tests/OpenSimMCPTests/PerformanceToolsTests.swift
+git commit -m "feat(perf): expose perf command and catalog-backed mcp tools"
 ```
-
-Expected: PASS 5 test.
-
-- [ ] **Step 8: Commit**
-
-```bash
-git add Sources/OpenSimCLI/Output/PerformanceTable.swift Sources/OpenSimCLI/Commands/PerformanceCommand.swift Sources/OpenSimDaemon/Metrics/MetricsOperationHandler.swift Sources/OpenSimMCP/Tools/PerformanceTools.swift Tests/OpenSimCLITests/Goldens/perf-top.json Tests/OpenSimCLITests/PerformanceCommandTests.swift Tests/OpenSimMCPTests/PerformanceToolsTests.swift
-git commit -m "feat(perf): add CLI and MCP performance tools"
-```
-
 ---
 
 ### Task 15: App Storage tab
@@ -8301,6 +7687,32 @@ extension DaemonClient: PerformanceAPIClient {
 
 `events(lastEventID:)` là API Plan 4; controller/metrics chỉ đọc, không có write action.
 
+- [ ] **Step 5A: Bật Performance và thay shell**
+
+Sửa `App/Sources/OpenSimApp/App/AppFeature.swift`:
+
+```swift
+public enum AppFeature {
+    public static let performance = true
+}
+```
+
+Sửa `AppShell` case `.performance`:
+
+```swift
+case .performance:
+    PerformanceTabView(model: environment.performance)
+```
+
+`AppEnvironment` tạo `PerformanceTabModel` từ app `DaemonClient` và giữ nó như `catalog`/`runtimes`; không tạo model mới trong view. Xoá `StorageShellView`/`ServiceShellModel` sau khi `StorageTabView` thay thế; cập nhật `Tests/OpenSimAppUITests/ServiceShellUITests.swift` sang `storage-tab`, và assert `sidebar-performance` tồn tại sau khi bật flag.
+
+```bash
+xcodegen generate --spec App/project.yml
+xcodebuild test -project App/OpenSim.xcodeproj -scheme OpenSim -destination 'platform=macOS' -only-testing:OpenSimAppUITests/ServiceShellUITests
+```
+
+Expected: `storage-tab` hiện; `sidebar-performance` tồn tại; không còn `storage-shell`/`performance-shell`.
+
 - [ ] **Step 6: Chạy UI test để thấy pass**
 
 Run:
@@ -8316,8 +7728,8 @@ Expected: PASS 1 test khi có ít nhất một device booted; nếu không có d
 - [ ] **Step 7: Commit**
 
 ```bash
-git add App/Sources/OpenSimApp/Performance App/Sources/OpenSimApp/App/AppShell.swift App/Sources/OpenSimApp/App/DaemonClient.swift Tests/OpenSimAppUITests/PerformanceTabUITests.swift
-git commit -m "feat(app): add performance tab with live metrics and actions"
+git add App/Sources/OpenSimApp/Performance App/Sources/OpenSimApp/App/AppShell.swift App/Sources/OpenSimApp/App/AppFeature.swift App/Sources/OpenSimApp/App/AppEnvironment.swift App/Sources/OpenSimApp/App/DaemonClient.swift Tests/OpenSimAppUITests/PerformanceTabUITests.swift Tests/OpenSimAppUITests/ServiceShellUITests.swift
+git commit -m "feat(app): add performance tab and enable performance flag"
 ```
 
 ### Task 17: Integration tests, in-use blocking và kiểm tra cuối

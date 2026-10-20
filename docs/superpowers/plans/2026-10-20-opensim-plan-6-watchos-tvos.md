@@ -55,8 +55,8 @@
 | `Sources/OpenSimCLI/Commands/DeviceCommand.swift` | Thêm `device pair`, `device unpair` | Sửa (Plan 1) |
 | `Sources/OpenSimMCP/Tools/DeviceTools.swift` | Hoàn thiện handler `device_pair` | Sửa (Plan 3) |
 | `App/Sources/OpenSimApp/Windows/PlatformToolbarAdapter.swift` | Lọc button/gesture theo adapter | Tạo |
-| `App/Sources/OpenSimApp/Windows/DeviceWindowToolbar.swift` | Dùng adapter thay danh sách cố định | Sửa (Plan 4) |
-| `App/Sources/OpenSimApp/Windows/DeviceWindowController.swift` | Truyền platform adapter vào cửa sổ | Sửa (Plan 4) |
+| `App/Sources/OpenSimApp/Windows/DeviceToolbar.swift` | Dùng adapter thay danh sách cố định | Sửa (Plan 4) |
+| `App/Sources/OpenSimApp/Windows/DeviceWindowRoot.swift` | Truyền platform adapter vào cửa sổ | Sửa (Plan 4) |
 | `Fixtures/OpenSimFixtureWatch/project.yml` | XcodeGen watch fixture | Tạo |
 | `Fixtures/OpenSimFixtureWatch/Sources/OpenSimFixtureWatchApp.swift` | Entry point watch | Tạo |
 | `Fixtures/OpenSimFixtureWatch/Sources/ContentView.swift` | Button/label watch | Tạo |
@@ -669,6 +669,7 @@ final class PlatformRuntimeInventoryTests: XCTestCase {
         }
         func installRuntime(at path: String) async throws -> Runtime { values[0] }
         func deleteRuntime(_ id: RuntimeID) async throws {}
+        func verifyRuntime(_ id: RuntimeID) async throws {}
     }
 
     private func runtime(_ platform: Platform, available: Bool = true) -> Runtime {
@@ -1611,8 +1612,8 @@ git commit -m "feat(cli): add watch pairing and platform doctor matrix"
 
 **Files:**
 - Create: `App/Sources/OpenSimApp/Windows/PlatformToolbarAdapter.swift`
-- Modify: `App/Sources/OpenSimApp/Windows/DeviceWindowToolbar.swift` (Plan 4)
-- Modify: `App/Sources/OpenSimApp/Windows/DeviceWindowController.swift` (Plan 4)
+- Modify: `App/Sources/OpenSimApp/Windows/DeviceToolbar.swift` (Plan 4)
+- Modify: `App/Sources/OpenSimApp/Windows/DeviceWindowRoot.swift` (Plan 4)
 - Test: `Tests/OpenSimAppUITests/PlatformWindowUITests.swift`
 
 **Interfaces:**
@@ -1723,16 +1724,16 @@ public struct PlatformToolbarAdapter: Sendable {
 
 - [ ] **Step 4: Nối toolbar và controller**
 
-Trong `App/Sources/OpenSimApp/Windows/DeviceWindowController.swift`, lấy adapter:
+Trong `App/Sources/OpenSimApp/Windows/DeviceWindowRoot.swift`, lấy adapter:
 
 ```swift
 let adapter = PlatformRegistry().adapter(forDeviceType: device.deviceType) ?? IOSPlatformAdapter()
 let toolbarAdapter = PlatformToolbarAdapter(adapter: adapter)
 ```
 
-Truyền `toolbarAdapter` vào `DeviceWindowToolbar`.
+Truyền `toolbarAdapter` vào `DeviceToolbar`.
 
-Trong `App/Sources/OpenSimApp/Windows/DeviceWindowToolbar.swift`, thay danh sách button cố định:
+Trong `App/Sources/OpenSimApp/Windows/DeviceToolbar.swift`, thay danh sách button cố định:
 
 ```swift
 let allButtons: [HardwareButton] = [
@@ -1774,7 +1775,7 @@ Expected: PASS 2 test nếu runtime watch/tv có sẵn; nếu thiếu, mỗi tes
 - [ ] **Step 6: Commit**
 
 ```bash
-git add App/Sources/OpenSimApp/Windows/PlatformToolbarAdapter.swift App/Sources/OpenSimApp/Windows/DeviceWindowToolbar.swift App/Sources/OpenSimApp/Windows/DeviceWindowController.swift Tests/OpenSimAppUITests/PlatformWindowUITests.swift
+git add App/Sources/OpenSimApp/Windows/PlatformToolbarAdapter.swift App/Sources/OpenSimApp/Windows/DeviceToolbar.swift App/Sources/OpenSimApp/Windows/DeviceWindowRoot.swift Tests/OpenSimAppUITests/PlatformWindowUITests.swift
 git commit -m "feat(app): drive device toolbar from platform adapters"
 ```
 

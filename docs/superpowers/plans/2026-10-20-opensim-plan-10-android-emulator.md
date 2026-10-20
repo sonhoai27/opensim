@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-19-open-simulator-design.md`
 
-**Depends on:** Plan 2 (`DisplaySurface`/selector contracts), Plan 3 (operation catalog, daemon, lease), Plan 4 (app shell). Plan 10 is additive; it can run after Plan 4 and in parallel with Plan 5/6, or after Plan 7 if Android is not in the Apple release.
+**Depends on:** Plan 2 (`DisplaySurface`/selector contracts), Plan 3 (operation catalog, daemon, lease), Plan 4 (app shell), Plan 5 (`openSim()` catalog scaffold). Plan 10 is additive; it can run after Plan 5 and in parallel with Plan 6, or after Plan 7 if Android is not in the Apple release.
 
 ## Global Constraints
 
@@ -18,8 +18,9 @@
 - Không tự tải Android SDK, system image, JDK hoặc license. Mọi thao tác cài đặt cần owner consent rõ ràng.
 - Không dùng shell string. Mọi process (`adb`, `emulator`, `avdmanager`, `sdkmanager`) dùng argument array qua `Process`.
 - Không xoá AVD/system image khi đang chạy hoặc đang được AVD khác dùng. Delete cần confirm và kiểm tra in-use ngay trước khi xoá.
+- Không ghi đè AVD cùng tên. `create` preflight `emulator -list-avds`; nếu tên đã tồn tại trả `device_name_conflict`. Muốn thay AVD phải `android_avd_delete` (confirm, chỉ khi stopped) rồi `android_avd_create`; Plan 10 không có `replaceExisting`, không dùng `--force`.
 - Android Emulator chỉ chạy trên macOS host trong plan này; không hỗ trợ Android physical devices, Genymotion, BlueStacks.
-- Loopback only: emulator gRPC bind `127.0.0.1`; adb server theo mặc định của Android SDK.
+- Loopback only: emulator gRPC bind `127.0.0.1`, bật `-grpc-use-jwt`, token file `0600`; adb server theo mặc định của Android SDK. Không mở gRPC không auth.
 - Không log token/console auth; không đưa screenshot/log lên mạng.
 - Native UI only: không đưa card/chart/custom style mới; Android UI dùng chung shell/Table/List/Form của Plan 4.
 - Không đổi tên `Device`, `Runtime`, `DeviceID`, `Platform` ngoài việc thêm `Platform.android`.
@@ -56,11 +57,13 @@ Không giả định có AVD/system image sẵn. Integration test phải `XCTSki
 | `Sources/OpenSimAndroid/Generated/` | Checked-in protobuf/gRPC Swift stubs | 6 |
 | `Sources/OpenSimAndroid/AndroidPlatformAdapter.swift` | Compose services into platform adapter | 8 |
 | `Sources/OpenSimDaemon/Platforms/PlatformDoctor.swift` | Compose Apple + Android doctor | 1, 8 |
-| `Sources/OpenSimAndroid/Catalog/AndroidOperations.swift` | `android_avd_*`, `android_system_image_*` | 8 |
+| `Sources/OpenSimCore/Catalog/AndroidOperations.swift` | Metadata `android_avd_*`, `android_system_image_*` | 8 |
+| `Sources/OpenSimCore/Catalog/OpenSimCatalog.swift` | Mở rộng `openSim()` với Android | 8 |
 | `Sources/OpenSimDaemon/Platforms/PlatformRouter.swift` | Route operation theo platform/device | 8 |
 | `App/Sources/OpenSimApp/Devices/NewDeviceModel.swift` | Platform + Android device type | 9 |
 | `App/Sources/OpenSimApp/Runtimes/RuntimeModel.swift` | Android system images | 9 |
-| `App/Sources/OpenSimApp/Windows/DeviceWindowRoot.swift` | Android screen/input/toolbar | 9 |
+| `App/Sources/OpenSimApp/Windows/DeviceWindowRoot.swift` | Chọn Android/Apple screen host | 9 |
+| `App/Sources/OpenSimApp/Windows/AndroidScreenHost.swift` | gRPC/screenshot host cho Android | 9 |
 | `App/Sources/OpenSimApp/Settings/DaemonSettingsView.swift` | Android SDK path/status | 9 |
 | `App/Sources/OpenSimApp/Settings/CapabilitiesSettingsView.swift` | Android doctor rows | 9 |
 | `Sources/OpenSimAndroid/AndroidStorageService.swift` | AVD/system-image storage items | 10 |
@@ -90,7 +93,7 @@ xcodebuild test -project App/OpenSim.xcodeproj -scheme OpenSim -destination 'pla
 
 **Files:**
 - Create: `Sources/OpenSimAndroid/AndroidSDK.swift`, `Sources/OpenSimAndroid/AndroidCommandRunner.swift`, `Tests/OpenSimAndroidTests/AndroidSDKTests.swift`
-- Modify: `Package.swift`, `Sources/OpenSimCore/Domain/Doctor.swift` (add Android capability fields), `Sources/OpenSimDaemon/Platforms/PlatformDoctor.swift` (create), `Sources/OpenSimDaemon/DaemonRunner.swift`, `Sources/OpenSimCLI/Runtime/CLIRuntime.swift`
+- Modify: `Package.swift`, `Sources/OpenSimCore/Domain/Doctor.swift` (add Android capability fields), `Sources/OpenSimDaemon/Platforms/PlatformDoctor.swift` (create), `Sources/OpenSimDaemon/Runtime/DaemonRunner.swift`, `Sources/OpenSimCLI/Runtime/CLIRuntime.swift`
 
 **Interfaces:**
 - Consumes: `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `JAVA_HOME`, filesystem.
@@ -157,6 +160,12 @@ public struct AndroidSDK: Sendable, Equatable {
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
         fileManager: FileManager = .default
     ) throws -> AndroidSDK
+
+    public static func avdHome(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
+        fileManager: FileManager = .default
+    ) -> URL
 }
 ```
 
@@ -169,7 +178,8 @@ public struct AndroidCommand: Sendable, Equatable {
     public var executable: URL
     public var arguments: [String]
     public var environment: [String: String]?
-    public var timeout: Duration
+    public var stdin: Data?
+    public var timeout: Duration?
 }
 
 public struct CommandOutput: Sendable, Equatable {
@@ -178,12 +188,22 @@ public struct CommandOutput: Sendable, Equatable {
     public var stderr: String
 }
 
+public struct AndroidProcessHandle: Sendable {
+    public let pid: Int32
+    public let stdout: AsyncStream<Data>
+    public let stderr: AsyncStream<Data>
+    public func write(_ data: Data) throws
+    public func terminate()
+    public func wait() async throws -> CommandOutput
+}
+
 public protocol AndroidCommandRunning: Sendable {
     func run(_ command: AndroidCommand) async throws -> CommandOutput
+    func start(_ command: AndroidCommand) async throws -> AndroidProcessHandle
 }
 ```
 
-Không dùng `sh -c`. Timeout mặc định 30 giây; `adb wait-for-device` dùng timeout riêng 120 giây. Capture stdout/stderr, trả `CommandOutput(exitCode:stdout:stderr:)`.
+Không dùng `sh -c`. `run` chỉ dành cho command hữu hạn (timeout mặc định 30 giây). `start` dành cho process dài hạn: `emulator` boot/wipe, `adb logcat`, và `sdkmanager` cần stdin. Handle giữ PID, stream stdout/stderr, cho phép write stdin, terminate và wait; daemon phải đăng ký handle để kill khi shutdown. `adb wait-for-device` dùng timeout riêng 120 giây.
 
 Doctor thêm:
 
@@ -212,7 +232,7 @@ Expected: PASS 2 test; build có target `OpenSimAndroid`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add Package.swift Sources/OpenSimAndroid Sources/OpenSimCore/Domain/Doctor.swift Sources/OpenSimDaemon/Platforms/PlatformDoctor.swift Sources/OpenSimDaemon/DaemonRunner.swift Sources/OpenSimCLI/Runtime/CLIRuntime.swift Tests/OpenSimAndroidTests/AndroidSDKTests.swift
+git add Package.swift Sources/OpenSimAndroid Sources/OpenSimCore/Domain/Doctor.swift Sources/OpenSimDaemon/Platforms/PlatformDoctor.swift Sources/OpenSimDaemon/Runtime/DaemonRunner.swift Sources/OpenSimCLI/Runtime/CLIRuntime.swift Tests/OpenSimAndroidTests/AndroidSDKTests.swift
 git commit -m "feat(android): detect SDK and expose doctor"
 ```
 ---
@@ -225,7 +245,27 @@ git commit -m "feat(android): detect SDK and expose doctor"
 
 **Interfaces:**
 - Consumes: `AndroidSDK`, `AndroidCommandRunning`, `Device`, `DeviceID`, `Platform.android`.
-- Produces: `AndroidAVDService.list()`, `.create(_:)`, `.boot(name:grpcPort:)`, `.shutdown(name:)`, `.erase(name:)`, `.delete(name:)`; `AndroidDeviceService.listDevices()`.
+- Produces: `AndroidAVDService.list()`, `.create(_:)`, `.boot(name:grpcPort:consolePort:headless:)`, `.shutdown(name:)`, `.erase(name:)`, `.delete(name:)`; `AndroidDeviceService.listDevices()`.
+
+```swift
+public struct AndroidAVD: Sendable, Equatable, Identifiable {
+    public enum State: String, Sendable { case stopped, booting, running }
+    public var id: String { name }
+    public let name: String
+    public let deviceType: String
+    public let systemImage: String
+    public let apiLevel: Int
+    public let tag: String
+    public let abi: String
+    public let dataPath: String
+    public var state: State
+    public var serial: String?
+    public var grpcPort: Int?
+    public var consolePort: Int?
+    public var lastBootedAt: Date?
+    public var deviceID: DeviceID { DeviceID(rawValue: "android:\(name)") }
+}
+```
 
 - [ ] **Step 1: Viết test parse/list**
 
@@ -252,21 +292,21 @@ final class AndroidAVDTests: XCTestCase {
 public actor AndroidAVDService {
     public func list() async throws -> [AndroidAVD]
     public func create(name: String, deviceType: String, systemImage: String) async throws -> AndroidAVD
-    public func boot(name: String, grpcPort: Int, headless: Bool) async throws -> AndroidAVD
+    public func boot(name: String, grpcPort: Int, consolePort: Int, headless: Bool) async throws -> AndroidAVD
     public func shutdown(name: String) async throws
     public func erase(name: String) async throws
     public func delete(name: String) async throws
 }
 ```
 
-- `list`: chạy `emulator -list-avds`; đọc `~/.android/avd/<name>.avd/config.ini` để lấy `image.sysdir.1`, `abi.type`, `tag.id`, `hw.device.name`; state từ `adb devices -l` (`emulator-<port>`) và process table.
-- `create`: `avdmanager create avd -n <name> -k <systemImage> -d <deviceType> --force`; không tự cài image; nếu image thiếu trả `android_image_unavailable`.
-- `boot`: `emulator -avd <name> -grpc 127.0.0.1:<port> -no-snapshot-save -no-boot-anim -port <consolePort>`; headless thêm `-no-window`; chờ `adb -s emulator-<port> wait-for-device` và `getprop sys.boot_completed == 1` tối đa 120 giây.
+- `list`: chạy `emulator -list-avds`; resolve AVD home qua `AndroidSDK.avdHome(environment:fileManager:)` (`ANDROID_AVD_HOME`, `ANDROID_USER_HOME/avd`, `~/.android/avd`), rồi đọc `<home>/<name>.avd/config.ini` để lấy `image.sysdir.1`, `abi.type`, `tag.id`, `hw.device.name`; state từ `adb devices -l` (`emulator-<port>`) và process table. Không hardcode `~/.android/avd` trong service.
+- `create`: preflight `emulator -list-avds`; nếu name đã tồn tại, trả `device_name_conflict` và không chạy `avdmanager`. Luôn chạy `avdmanager create avd -n <name> -k <systemImage> -d <deviceType>` không `--force`. Không tự cài image; nếu image thiếu trả `android_image_unavailable`.
+- `boot`: dùng `start` (không phải `run`) cho `emulator -avd <name> -grpc <grpcPort> -grpc-use-jwt -no-snapshot-save -no-boot-anim -port <consolePort>`; headless thêm `-no-window`. **Caller ở daemon/CLI** cấp phát hai port loopback qua `PortAllocator` (không dùng `0`) và truyền vào; `AndroidAVDService` chỉ validate port >0 và chưa bị chiếm. Lưu port vào `AndroidAVD`; JWT token sinh random, file `0600`, truyền vào `EmulatorGRPCClient`. Lưu `AndroidProcessHandle`/PID theo AVD; chờ `adb -s emulator-<port> wait-for-device`, `getprop sys.boot_completed == 1`, rồi probe gRPC `getStatus` tối đa 120 giây. Kill handle khi shutdown/erase hoặc daemon stop. Nếu gRPC không lên, giữ AVD chạy nhưng đánh dấu `grpcUnavailable` và dùng adb fallback; không trả device như fully ready nếu chưa probe.
 - `shutdown`: `adb -s <serial> emu kill`; fallback kill process đã đăng ký; chờ process exit.
 - `erase`: shutdown trước, rồi `emulator -avd <name> -wipe-data`; không xoá config.
 - `delete`: chặn nếu running/in-use; `avdmanager delete avd -n <name>`; xác nhận đã biến mất khỏi `-list-avds`.
 
-`AndroidDeviceService.listDevices()` map AVD đang chạy thành `Device`:
+`AndroidDeviceService.listDevices()` map **tất cả** AVD (kể cả đã tắt) thành `Device`; AVD đang chạy được enrich serial/grpc port, AVD đã tắt vẫn phải xuất hiện để `device_boot`/New Simulator chọn được. State: `shutdown` khi process không chạy, `booting` khi process sống nhưng `sys.boot_completed != 1`, `booted` khi cả hai đều true. AVD home lấy từ `ANDROID_AVD_HOME`, `ANDROID_USER_HOME/avd`, rồi `~/.android/avd`; không hardcode path. Mapping:
 
 ```swift
 Device(
@@ -275,12 +315,18 @@ Device(
     platform: .android,
     deviceType: avd.deviceType,
     runtime: RuntimeID(rawValue: avd.systemImage),
-    state: avd.state == .running ? .booted : .shutdown,
+    state: switch avd.state {
+    case .running: .booted
+    case .booting: .booting
+    case .stopped: .shutdown
+    },
     isAvailable: true,
     dataPath: avd.dataPath,
     lastBootedAt: avd.lastBootedAt
 )
 ```
+
+Test bắt buộc: `create` cùng tên trả `device_name_conflict` và không gọi `avdmanager`; muốn thay phải `delete` với confirm (chỉ khi stopped) rồi create; teardown không xoá AVD không do test tạo.
 
 - [ ] **Step 3: Chạy test xanh + integration skip**
 
@@ -328,8 +374,8 @@ func testInstallUsesArgumentArray() async throws {
 - `launch`: `adb -s <serial> shell am start -n <package>/<activity>`; resolve activity qua `cmd package resolve-activity --brief`.
 - `terminate`: `adb -s <serial> shell am force-stop <package>`.
 - `info`: `adb shell dumpsys package <package>` parse versionName/versionCode/label.
-- `log`: `adb -s <serial> logcat -v threadtime` stream; tail dùng `-t <limit>` và cursor timestamp.
-- Không dùng `Runtime.exec`/shell string.
+- `log`: dùng `start` cho `adb -s <serial> logcat -v threadtime` stream; tail dùng `-t <limit>` và cursor timestamp. Stream cancel phải terminate handle.
+- Không dùng `Runtime.exec`/shell string; không chạy logcat qua `run` (process không exit).
 
 - [ ] **Step 3: Chạy test xanh**
 
@@ -370,7 +416,7 @@ func testScreenshotUsesExecOut() async throws {
 
 - Serial resolve: `android:<avdName>` → running emulator serial từ `AndroidAVDService`/adb; không đoán `emulator-5554`.
 - Screen: `adb -s <serial> exec-out screencap -p`; trả PNG data; `screenInfo` lấy `wm size`/`wm density` (hoặc gRPC status).
-- Tap/swipe/long-press/drag: `adb shell input tap x y`, `swipe x1 y1 x2 y2 durationMs`; long press dùng swipe cùng điểm với duration; drag dùng swipe duration dài.
+- Tap/swipe/long-press/drag: `adb shell input tap x y`, `swipe x1 y1 x2 y2 durationMs`; long press dùng swipe cùng điểm với duration; drag dùng swipe duration dài. `tap(on:at:settle:)` phải honor `settle` (poll UI ổn định ngắn) và trả `capability_unavailable` cho pinch/rotate nếu gRPC chưa có.
 - Type: `adb shell input text <escaped>`; escape khoảng trắng thành `%s`, shell metacharacters không đi qua shell vì argument array nhưng adb shell vẫn cần escape đúng; dùng helper `AndroidInputText.escape`.
 - Key/button: `input keyevent <code>`; map Home/Back/Overview/Power/Volume/Rotate.
 - Scroll: `input swipe` trong vùng screen.
@@ -399,7 +445,7 @@ git commit -m "feat(android): add adb screen and input fallback"
 
 **Interfaces:**
 - Consumes: `AccessibilityReading.find`, `UIElement`, `ElementSelector`.
-- Produces: `AndroidAccessibilityService.find(on:selector:)`, `.tree(on:maxDepth:)`.
+- Produces: `AndroidAccessibilityService.find(on:selector:)`, `.tree(on:maxDepth:maxNodes:)`.
 
 - [ ] **Step 1: Test parse XML fixture**
 
@@ -455,7 +501,7 @@ git commit -m "feat(android): add uiautomator accessibility"
 
 **Interfaces:**
 - Consumes: `emulator_controller.proto` service `android.emulation.control.EmulatorController`, methods `getScreenshot`, `streamScreenshot`, `sendTouch`, `sendKey`, `getStatus`.
-- Produces: `EmulatorGRPCClient.connect(port:)`, `.streamScreens()`, `.sendTouch(_:)`, `.sendKey(_:)`, `.status()`; `AndroidGRPCDisplaySurface` conforming to Plan 2 `DisplaySurface`.
+- Produces: `EmulatorGRPCClient.connect(port:token:)`, `.streamScreens()`, `.sendTouch(_:)`, `.sendKey(_:)`, `.status()`; `AndroidGRPCDisplaySurface` conforming to Plan 2 `DisplaySurface`. Token lấy từ file `0600` do boot tạo; không hardcode.
 
 - [ ] **Step 1: Generate and check in stubs**
 
@@ -475,11 +521,11 @@ func testTouchPayloadContainsAllPointers() throws {
 
 - [ ] **Step 3: Implement client**
 
-- Boot emulator with `-grpc 127.0.0.1:<dynamicPort>`; store port in `AndroidAVD`/device metadata.
-- `streamScreens`: consume `streamScreenshot`; decode image; hand frames to `AndroidGRPCDisplaySurface`; drop frames if consumer busy (no unbounded buffer).
+- Boot emulator with `-grpc <port> -grpc-use-jwt`; allocate port via `PortAllocator`, never `0`; store port + JWT token path in `AndroidAVD`/device metadata. Bind loopback only; no remote network.
+- `streamScreens`: consume `streamScreenshot`; decode image; hand frames to `AndroidGRPCDisplaySurface`; drop frames if consumer busy (no unbounded buffer). `connect` nhận JWT token; token sai/expired → `grpc_unavailable`, không thử lại vô hạn.
 - `sendTouch`: map `SimulatorGesture` touch points to `TouchEvent`; multi-touch supported; `sendKey` for hardware keys.
-- Fallback: if gRPC connect fails, `capability_unavailable("androidGrpc")`; screen/input use adb fallback; UI/doctor show explicit notice.
-- Bind loopback; do not enable TLS in Plan 10; no remote network.
+- Fallback: if gRPC connect/probe/JWT fails, `grpc_unavailable`; screen/input use adb fallback; UI/doctor show explicit notice. Không mở gRPC không JWT. Nếu emulator version không hỗ trợ `-grpc-use-jwt`, không expose gRPC; chỉ dùng adb fallback.
+- Probe `getStatus` sau boot; chỉ đánh dấu `grpcReady` khi thành công. Test port collision, 2 AVD, daemon restart/reconnect, JWT sai.
 
 - [ ] **Step 4: Test + skip**
 
@@ -525,7 +571,7 @@ func testParsesInstalledAndAvailableSystemImages() throws {
 - [ ] **Step 2: Implement**
 
 - `list`: `sdkmanager --list`; parse only `system-images;` lines; API level, tag, ABI.
-- `install`: require explicit `acceptLicense`; run `sdkmanager --install <package>` with `yes` input only after owner consent; never auto-install.
+- `install`: require explicit `acceptLicense`; hiển thị license text/hash, ghi consent, rồi `start` `sdkmanager --install <package>` và ghi `y\n` qua stdin handle. Không dùng `yes` shell, không auto-accept; từ chối consent thì không gọi sdkmanager.
 - `uninstall`: block if any AVD references package; `sdkmanager --uninstall <package>` after confirm.
 - No system image deletion in background.
 
@@ -541,20 +587,57 @@ git commit -m "feat(android): add system image management"
 ### Task 8: Platform adapter, daemon routing, CLI và MCP
 
 **Files:**
-- Create: `Sources/OpenSimAndroid/AndroidPlatformAdapter.swift`, `Sources/OpenSimAndroid/Catalog/AndroidOperations.swift`, `Sources/OpenSimDaemon/Platforms/PlatformRouter.swift`
-- Modify: `Package.swift`, `Sources/OpenSimDaemon/DaemonRunner.swift`, `Sources/OpenSimCore/Catalog/OperationCatalog.swift` factory (`openSim()` or `plan5()` merge), `Sources/OpenSimCLI/Commands/OpenSimCommand.swift` (`android` subcommand), `Sources/OpenSimMCP` catalog adapter tests.
+- Create: `Sources/OpenSimAndroid/AndroidPlatformAdapter.swift`, `Sources/OpenSimCore/Catalog/AndroidOperations.swift`, `Sources/OpenSimDaemon/Platforms/PlatformRouter.swift`
+- Modify: `Package.swift`, `Sources/OpenSimDaemon/Runtime/DaemonRunner.swift`, `Sources/OpenSimCore/Catalog/OpenSimCatalog.swift` (`openSim()`), `Sources/OpenSimDaemon/Operations/OperationDispatcher.swift`, `Sources/OpenSimBridge/Operations/BridgeOperationExecutor.swift`, `Sources/OpenSimCore/Validation/DeviceResolver.swift`, `Sources/OpenSimCLI/OpenSimCommand.swift` (`android` subcommand), `Sources/OpenSimMCP` catalog adapter tests.
 
 **Interfaces:**
-- Consumes: all Android services, `OperationCatalog`, `OperationDispatcher`.
+- Consumes: all Android services, `OperationCatalog`, `OperationDispatcher`, `DeviceResolver`.
 - Produces: `AndroidPlatformAdapter` conforms to device/runtime/app/log/screen/input/accessibility protocols; `PlatformRouter` selects Apple/Android by `Device.platform`; `android_avd_*`/`android_system_image_*` operations.
+
+Files bổ sung: `Sources/OpenSimCore/Validation/DeviceResolver.swift` (exact-ID branch), `Sources/OpenSimDaemon/Operations/OperationDispatcher.swift`, `Sources/OpenSimBridge/Operations/BridgeOperationExecutor.swift` (routing injection), `Sources/OpenSimCore/Catalog/OpenSimCatalog.swift`.
+
+Operation table:
+
+| Operation | Lease | Destructive | Parameters |
+|---|---|---|---|
+| `android_avd_list` | no | no | `sdkPath?` |
+| `android_avd_create` | no | no | `name`, `deviceType`, `systemImage`; lỗi nếu tên tồn tại |
+| `android_avd_boot` | device control | no | `device`, `headless?` |
+| `android_avd_shutdown` | device control | no | `device` |
+| `android_avd_erase` | device control | yes | `device`, `confirm` |
+| `android_avd_delete` | device control | yes | `device`, `confirm` |
+| `android_system_image_list` | no | no | `sdkPath?` |
+| `android_system_image_install` | no | no | `package`, `acceptLicense` |
+| `android_system_image_uninstall` | no | yes | `package`, `confirm` |
+
+Global AVD/image operations require a valid session and audit; boot/shutdown/erase/delete use the device control lease. No operation is registered twice.
+
+Protocol conformance map:
+
+| Protocol method | Android implementation |
+|---|---|
+| `tree(on:maxDepth:maxNodes:)` | uiautomator XML; cap nodes and return `truncated` |
+| `find(on:selector:)` | same parser; selector `id/label/text/role` |
+| `tap(on:at:settle:)` | gRPC touch if available, else adb; honor `settle` |
+| `swipe/longPress/drag/scroll` | gRPC/adb; unsupported multi-touch returns `capability_unavailable` |
+| `pinch/rotate` | gRPC only; adb fallback returns `capability_unavailable` |
+| `button` | Android keyevent mapping for Home/Back/Overview/Power/Volume |
+| `screenshot(on:format:scale:quality:)` | PNG via screencap; non-PNG/scale/quality validated or rejected |
+| `screens(for:)` | `wm size`/`wm density` or gRPC status; one Android display |
+| `recording start/stop` | `adb shell screenrecord` to app-owned path; cancel stops process |
+| `containerPath` | `adb shell pm path <bundleID>`; data path from `run-as` only when debuggable |
+| `clone/rename/pair` | `capability_unavailable` in Plan 10 |
+| `downloadRuntime/installRuntime/deleteRuntime/verifyRuntime` | map to system image service; AVD runtime identity is the image package |
 
 - [ ] **Step 1: Test catalog and routing**
 
 ```swift
 func testAndroidOperationsAreInUnifiedCatalog() {
-    let names = Set(OperationCatalog.plan10().mcpOperations().map(\.mcpName))
+    let names = Set(OperationCatalog.openSim().mcpOperations().map(\.mcpName))
     XCTAssertTrue(names.isSuperset(of: ["android_avd_list", "android_avd_create", "android_system_image_list"]))
     XCTAssertTrue(names.contains("ui_tap"))
+    XCTAssertTrue(names.contains("storage_scan"))
+    XCTAssertTrue(names.contains("perf_devices"))
 }
 
 func testRouterSelectsAndroidByDeviceID() async throws {
@@ -565,11 +648,12 @@ func testRouterSelectsAndroidByDeviceID() async throws {
 
 - [ ] **Step 2: Implement routing**
 
-- `OperationCatalog.plan10()` = `plan5()` + `AndroidOperations.all`; no separate tool list. Nếu Plan 9 đã có `OperationCatalog.openSim()`, merge Android registration vào factory đó và dùng một factory duy nhất cho daemon/CLI/MCP; không tạo catalog thứ hai.
+- `OperationCatalog.openSim()` là factory duy nhất. Sửa `Sources/OpenSimCore/Catalog/OpenSimCatalog.swift` để gọi `registerAndroidOperations()`; nếu Plan 9 đã có, giữ `registerPhysicalOperations()`. Không tạo `plan10()`/catalog thứ hai.
+- Android operations metadata nằm trong `OpenSimCore`, không import `OpenSimAndroid` từ Core; adapter chỉ implement handler/service.
 - `PlatformRouter` gets platform from device prefix (`android:`) or explicit `platform` parameter; Apple IDs remain UUID. `DeviceResolver` exact-ID branch phải nhận `android:<avdName>` trước UUID validation; AVD name không bị ép thành UUID.
 - `OperationDispatcher`/`BridgeOperationExecutor` route device-scoped ops to the adapter; global `android_*` ops go to `AndroidPlatformAdapter`.
 - Lease/audit unchanged: `session_acquire` on Android device ID; control lease per AVD; delete/erase destructive confirm.
-- CLI: `opensim android avd list/create/delete`, `opensim android system-image list/install`; device/runtime/app/ui commands accept `--platform android` or Android device name.
+- CLI: `opensim android avd list/create/boot/shutdown/erase/delete`, `opensim android system-image list/install/uninstall`; device/runtime/app/ui commands accept `--platform android` or Android device name.
 - MCP: same operation names; no `android_*` tool duplicates for device/ui/app/log.
 - Error codes: `android_sdk_not_found`, `avd_not_found`, `emulator_failed`, `adb_failed`, `android_image_unavailable`, `grpc_unavailable`.
 
@@ -578,7 +662,7 @@ func testRouterSelectsAndroidByDeviceID() async throws {
 ```bash
 swift test --filter OpenSimAndroidTests
 swift test --filter OpenSimMCPTests
-git add Package.swift Sources/OpenSimAndroid/AndroidPlatformAdapter.swift Sources/OpenSimAndroid/Catalog Sources/OpenSimDaemon/Platforms Sources/OpenSimDaemon/DaemonRunner.swift Sources/OpenSimCLI/Commands/OpenSimCommand.swift
+git add Package.swift Sources/OpenSimAndroid/AndroidPlatformAdapter.swift Sources/OpenSimCore/Catalog/AndroidOperations.swift Sources/OpenSimCore/Catalog/OpenSimCatalog.swift Sources/OpenSimCore/Validation/DeviceResolver.swift Sources/OpenSimDaemon/Platforms Sources/OpenSimDaemon/Operations/OperationDispatcher.swift Sources/OpenSimDaemon/Runtime/DaemonRunner.swift Sources/OpenSimBridge/Operations/BridgeOperationExecutor.swift Sources/OpenSimCLI/OpenSimCommand.swift Sources/OpenSimMCP Tests/OpenSimMCPTests
 git commit -m "feat(android): route daemon cli and mcp operations"
 ```
 ---
@@ -586,7 +670,8 @@ git commit -m "feat(android): route daemon cli and mcp operations"
 ### Task 9: macOS app platform support
 
 **Files:**
-- Modify: `App/Sources/OpenSimApp/Devices/DeviceCatalogModel.swift`, `DevicesView.swift`, `NewDeviceModel.swift`, `Runtimes/RuntimeModel.swift`, `RuntimesView.swift`, `Windows/DeviceWindowRoot.swift`, `Windows/DeviceToolbar.swift`, `Settings/DaemonSettingsView.swift`, `Settings/CapabilitiesSettingsView.swift`
+- Create: `App/Sources/OpenSimApp/Windows/AndroidScreenHost.swift`
+- Modify: `App/Sources/OpenSimApp/App/AppEnvironment.swift`, `App/Sources/OpenSimApp/App/BridgeHandles.swift`, `App/Sources/OpenSimApp/Devices/DeviceCatalogModel.swift`, `DevicesView.swift`, `NewDeviceModel.swift`, `Runtimes/RuntimeModel.swift`, `RuntimesView.swift`, `Windows/DeviceWindowModel.swift`, `Windows/DeviceWindowRoot.swift`, `Windows/SimulatorScreenContainerView.swift`, `Windows/DeviceToolbar.swift`, `Settings/DaemonSettingsView.swift`, `Settings/CapabilitiesSettingsView.swift`
 - Test: `Tests/OpenSimAppUITests/AndroidUITests.swift`
 
 **Interfaces:**
@@ -613,7 +698,8 @@ func testAndroidPlatformFilterAndNewDevice() throws {
 - `DeviceCatalogModel` exposes `platformFilter`; `DevicesView` Picker All/Apple/Android; Android row icon `smartphone` (SF Symbol).
 - New Simulator adds platform Picker (Apple/Android), device type Picker (Pixel 9/Pixel 9 Pro/Tablet), system image Picker; Android Create disabled if SDK/AVD image missing; note links to Runtimes/Doctor.
 - Runtimes adds Android system-image rows (`API 36 · google_apis · arm64-v8a`, installed/not, size, AVD count); Install requires license consent.
-- Device window uses `AndroidGRPCDisplaySurface`; if gRPC unavailable, screenshot polling with a visible "Fallback" capability note; toolbar Back/Home/Overview/Power/Rotate; keyboard/paste via adb/gRPC.
+- `BridgeHandles` thêm `android: AndroidPlatformAdapter?`; `AppEnvironment` khởi tạo adapter khi SDK detect được. `DeviceWindowModel` chọn `AndroidScreenHost` khi `device.platform == .android`, không dùng `SimulatorScreenView`/`displayBridge` Apple cho Android.
+- `AndroidScreenHost` dùng `AndroidGRPCDisplaySurface`; nếu gRPC unavailable, screenshot polling với capability note rõ ràng. Input Android đi qua `AndroidPlatformAdapter` **sau** `requireControlLease()`; không bypass lease/audit. Toolbar Back/Home/Overview/Power/Rotate; keyboard/paste qua adb/gRPC.
 - Settings > Daemon: Android SDK path, adb/emulator/avdmanager/Java status, Choose path; Capabilities > Doctor: Android rows and missing-SDK recovery.
 - No new visual system; use existing native Table/List/Form/Gauge/Chart.
 
@@ -629,8 +715,9 @@ git commit -m "feat(app): add android platform surfaces"
 ### Task 10: Android storage và metrics
 
 **Files:**
-- Create: `Sources/OpenSimAndroid/AndroidStorageService.swift`, `AndroidMetricsService.swift`
-- Modify: `Sources/OpenSimCore/Storage/StorageCategory.swift`, `Sources/OpenSimDaemon/Storage/StorageService.swift`, `Sources/OpenSimDaemon/Metrics/MetricsSampler.swift`, Plan 4 storage UI.
+- Create: `Sources/OpenSimAndroid/AndroidStorageService.swift`, `AndroidMetricsService.swift`, `Sources/OpenSimDaemon/Storage/AndroidStorageSource.swift`
+- Modify: `Sources/OpenSimCore/Domain/Storage.swift` (enum), `Sources/OpenSimCore/Storage/StorageCategoryMetadata.swift`, `Sources/OpenSimCore/Storage/StorageSafety.swift`, `Sources/OpenSimDaemon/Storage/StorageRoots.swift`, `Sources/OpenSimDaemon/Storage/CleanPlanStore.swift`, `Sources/OpenSimDaemon/Storage/CleanExecutor.swift`, `Sources/OpenSimDaemon/Storage/StorageService.swift`, `Sources/OpenSimDaemon/Metrics/MetricsSampler.swift`, Plan 4 storage UI.
+- Test: `Tests/OpenSimAndroidTests/AndroidStorageTests.swift`
 
 **Interfaces:**
 - Consumes: AVD data paths, SDK system images, host process table, adb.
@@ -638,20 +725,30 @@ git commit -m "feat(app): add android platform surfaces"
 
 - [ ] **Step 1: Test safety**
 
-- AVD running → `storage_in_use`.
+Tạo `Tests/OpenSimAndroidTests/AndroidStorageTests.swift` với fake command runner; test không skip, không cần AVD thật:
+
+- AVD running/in-use → `storage_in_use`; delete không được gọi runner.
+- AVD stopped nhưng có session lease → `storage_in_use`.
 - System image referenced by any AVD → `storage_in_use`.
-- Unknown SDK path → skip with explicit reason; never delete outside allowlist.
+- SDK root không chứa `platform-tools/adb` + `emulator/emulator` → từ chối root, không scan/xoá.
+- Package ngoài prefix `system-images;` → `invalid_argument`.
+- Clean AVD dùng `avdmanager delete avd`, system image dùng `sdkmanager --uninstall`; không dùng `FileManager.trashItem` trực tiếp.
+- Unknown `ANDROID_AVD_HOME`/`ANDROID_USER_HOME` path → skip với lý do, không xoá ngoài allowlist.
 
 - [ ] **Step 2: Implement**
 
-- AVD data `~/.android/avd/<name>.avd`; system image `$ANDROID_SDK/system-images/...`; scan sizes allocated; no auto-clean.
+- AVD data lấy từ `ANDROID_AVD_HOME` hoặc `ANDROID_USER_HOME/avd` hoặc `~/.android/avd`; system image `$ANDROID_SDK/system-images/...`; scan allocated size; no auto-clean.
+- Thêm case không associated value `androidAVDDelete`, `androidSystemImageUninstall` vào `StorageCleanAction` (enum `String, Codable`), và thêm `androidAVDName: String?`/`androidSystemImagePackage: String?` vào `CleanPlanItemSnapshot` + init. `CleanExecutor` đọc target từ snapshot và gọi `avdmanager`/`sdkmanager`, không `trashItem` trực tiếp. Cập nhật `StorageCategoryMetadata`, `StorageSafety.evaluate`, `CleanPlanStore.confirmationPhrase`, `StorageService.verdict`/`verdict(forSnapshot:)`, `StorageRoots`, UI storage.
+- Cập nhật mọi switch exhaustive: `StorageCategoryMetadata`, `StorageSafety.evaluate`, `CleanPlanStore.confirmationPhrase`, `StorageService.verdict`/`verdict(forSnapshot:)`, `StorageRoots`, storage UI; không thêm `default` để che case thiếu.
+- `StorageCleanAction` là enum raw String: action Android không mang associated value; target AVD/package nằm trong `CleanPlanItemSnapshot`. `CleanExecutor` kiểm tra target trước khi chạy; thiếu target trả `invalid_argument`.
+- `StorageRoots` canonical hoá SDK/AVD root; chỉ chấp nhận SDK có `platform-tools/adb` + `emulator/emulator`; package `system-images;` only.
 - Metrics: map `emulator`/`qemu-system-*` process by `-avd <name>` in argv; CPU/RAM; supplement `adb shell dumpsys meminfo`/`top`; unknown group for unmapped.
 - UI: Storage rows use category "Android AVD / System images"; Performance table includes Android devices; no separate tab.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add Sources/OpenSimAndroid/AndroidStorageService.swift Sources/OpenSimAndroid/AndroidMetricsService.swift Sources/OpenSimCore/Storage Sources/OpenSimDaemon/Storage Sources/OpenSimDaemon/Metrics
+git add Sources/OpenSimAndroid/AndroidStorageService.swift Sources/OpenSimAndroid/AndroidMetricsService.swift Sources/OpenSimCore/Domain/Storage.swift Sources/OpenSimCore/Storage Sources/OpenSimDaemon/Storage Sources/OpenSimDaemon/Metrics Tests/OpenSimAndroidTests/AndroidStorageTests.swift
 git commit -m "feat(android): add storage and metrics"
 ```
 ---
@@ -670,21 +767,34 @@ git commit -m "feat(android): add storage and metrics"
 
 - Minimal Android app with a button (`resource-id` `dev.opensim.fixture:id/primary`), text field, counter label; build debug APK with Gradle; commit the APK or build in CI with JDK 17.
 - `create-test-avd.sh` checks `system-images;...` installed; if not, prints exact `sdkmanager` command and exits 2; never downloads.
-- AVD name `OpenSim_Test_API_36`; `avdmanager create avd -n ... -k ... -d pixel_9`.
+- Integration AVD name `OpenSim_Test_<UUID>`; teardown chỉ delete khi test đã tạo thành công (`didCreate == true`). Không dùng tên cố định và không ghi đè AVD có sẵn. Script `create-test-avd.sh` preflight tên/image và dừng nếu đã tồn tại.
 
 - [ ] **Step 2: Integration test**
 
 ```swift
 func testAndroidLifecycleAndUIActions() async throws {
     try requireAndroid()
-    let avd = try await avdService.create(name: "OpenSim_Test_API_36", deviceType: "pixel_9", systemImage: systemImage)
-    addTeardownBlock { try? await avdService.delete(name: avd.name) }
-    _ = try await avdService.boot(name: avd.name, grpcPort: 0, headless: true)
+    let avdName = "OpenSim_Test_\(UUID().uuidString)"
+    var didCreate = false
+    addTeardownBlock { if didCreate { try? await avdService.delete(name: avdName) } }
+    let avd = try await avdService.create(name: avdName, deviceType: "pixel_9", systemImage: systemImage)
+    didCreate = true
+    let grpcPort = try PortAllocator.freePort()
+    let consolePort = try PortAllocator.freePort()
+    _ = try await avdService.boot(name: avd.name, grpcPort: grpcPort, consolePort: consolePort, headless: true)
     try await appService.install(serial: avd.serial, apkPath: fixtureAPK.path, reinstall: true)
     try await appService.launch(serial: avd.serial, bundleID: "dev.opensim.fixture", activity: ".MainActivity")
-    let tree = try await accessibility.tree(on: avd.deviceID, maxDepth: 30)
-    XCTAssertTrue(tree.contains { $0.identifier == "dev.opensim.fixture:id/primary" })
-    try await input.tap(on: avd.deviceID, at: try XCTUnwrap(tree.first { $0.identifier == "dev.opensim.fixture:id/primary" }?.center))
+    let matches = try await accessibility.find(
+        on: avd.deviceID,
+        selector: ElementSelector(role: nil, label: nil, identifier: "dev.opensim.fixture:id/primary", text: nil)
+    )
+    let primary = try XCTUnwrap(matches.first)
+    XCTAssertGreaterThan(primary.frame.width, 0)
+    let center = Point(
+        x: primary.frame.x + primary.frame.width / 2,
+        y: primary.frame.y + primary.frame.height / 2
+    )
+    try await input.tap(on: avd.deviceID, at: center, settle: true)
     XCTAssertTrue(try await waitForLabel("1", timeout: 5))
     try await avdService.shutdown(name: avd.name)
 }
@@ -730,7 +840,7 @@ git commit -m "test(android): add fixture and integration gate"
 - App install/launch/terminate/log hoạt động qua adb; screenshot và tap/type hoạt động; gRPC live screen/multi-touch hoạt động khi bật, fallback adb rõ ràng.
 - uiautomator tree parse đúng identifier/text/bounds; selector `id=`, `label=`, `text=` tap đúng element.
 - System image list/install/uninstall hoạt động; không auto-download/không nhận license thay owner; uninstall bị chặn khi có AVD dùng.
-- Operation catalog `plan10()` gồm Android ops + `ui_*`/`storage_*`/`perf_*`; lease/audit dùng chung; MCP `tools/list` thấy Android tools.
+- Operation catalog `openSim()` gồm Android ops + `ui_*`/`storage_*`/`perf_*`; lease/audit dùng chung; MCP `tools/list` thấy Android tools.
 - UI: platform filter, New Simulator Android, Runtimes system image, Settings/Doctor Android; device window Android screen/input.
 - Storage scan thấy AVD/system image; in-use guard; metrics có Android sample hoặc `Unknown` rõ ràng.
 - Integration test Android pass khi có SDK/AVD, hoặc `BLOCKED: no Android AVD` với hướng dẫn; Apple release không bị chặn nếu owner không đưa Android vào release.

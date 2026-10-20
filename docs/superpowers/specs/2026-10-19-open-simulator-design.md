@@ -266,7 +266,7 @@ State machine runtime (operation, không phải field `isAvailable`): `available
 | device | `list`, `get`, `create`, `clone`, `boot`, `shutdown`, `erase`, `delete`, `rename`, `status` | delete/erase cần xác nhận |
 | device | `pair`, `unpair`, `location`, `appearance`, `privacy`, `push`, `openurl`, `pasteboard` | watch pair ở plan 6 |
 | runtime | `list`, `download`, `install`, `delete`, `verify` | `download` nhận platform + version Xcode hỗ trợ; `install` nhận `.dmg`; delete chặn nếu còn device dùng |
-| android | `avd list/create/delete`, `system-image list/install` | Plan 10; nhận `--sdk`/`ANDROID_HOME`; không auto-download nếu chưa đồng ý |
+| android | `avd list/create/boot/shutdown/erase/delete`, `system-image list/install/uninstall` | Plan 10; nhận `--sdk`/`ANDROID_HOME`; không auto-download nếu chưa đồng ý |
 | app | `list`, `install`, `uninstall`, `launch`, `terminate`, `info`, `container`, `data export`, `data import` | install nhận `.app`, `.ipa` đã giải nén |
 | ui | `screenshot`, `record start`, `record stop`, `info` | record dùng `simctl io` |
 | ui | `tap`, `swipe`, `long-press`, `drag`, `pinch`, `rotate`, `scroll`, `type`, `key`, `button`, `wait` | input qua daemon |
@@ -356,9 +356,14 @@ Tool name dùng snake_case, ổn định. Mọi tool trả `structuredContent` t
 | `runtime_install` | write | `path` | runtime từ `.dmg` |
 | `runtime_delete` | destructive | `identifier`, `confirm` | trạng thái; chặn nếu `deviceCount > 0` |
 | `android_avd_list` | read | `sdkPath?` | AVD + state |
-| `android_avd_create` | write | `name`, `deviceType`, `systemImage` | AVD mới |
+| `android_avd_create` | write | `name`, `deviceType`, `systemImage` | AVD mới; không ghi đè |
+| `android_avd_boot` | write | `name`, `headless?` | trạng thái + ports |
+| `android_avd_shutdown` | write | `name` | trạng thái |
+| `android_avd_erase` | destructive | `name`, `confirm` | trạng thái; chặn nếu running |
+| `android_avd_delete` | destructive | `name`, `confirm` | trạng thái; chặn nếu running/in-use |
 | `android_system_image_list` | read | `sdkPath?` | system image đã cài/khả dụng |
-| `android_system_image_install` | destructive | `package`, `confirm` | trạng thái; cần license/consent |
+| `android_system_image_install` | write | `package`, `acceptLicense` | trạng thái; cần license/consent, không auto |
+| `android_system_image_uninstall` | destructive | `package`, `confirm` | trạng thái; chặn nếu AVD dùng |
 | `app_list` | read | `device`, `filter?` | danh sách app |
 | `app_install` | write | `device`, `path` | app |
 | `app_uninstall` | destructive | `device`, `bundleID`, `confirm` | trạng thái |
@@ -648,7 +653,7 @@ Mỗi plan là một nhát cắt hoàn chỉnh có test và tài liệu; không 
 | 9 | Thiết bị thật qua CoreDevice | Pair, install, launch, screenshot, HID, log; test |
 | 10 | Android Emulator | AVD lifecycle, adb/gRPC screen/input, uiautomator, system images, UI/CLI/MCP, test |
 
-Phụ thuộc: 1 sau 0; 2 sau 1; 3 sau 1; 4 sau 2 và 3; 5 sau 1 và 3; 6 sau 2; 7 sau 1-6; 8 sau 7; 9 sau 3 và 7; 10 sau 2, 3 và 4, có thể chạy song song 5/6 hoặc sau 7 tùy việc Android có nằm trong release đầu hay không.
+Phụ thuộc: 1 sau 0; 2 sau 1; 3 sau 1; 4 sau 2 và 3; 5 sau 1 và 3; 6 sau 2; 7 sau 1-6; 8 sau 7; 9 sau 3 và 7; 10 sau 2, 3, 4 và 5, có thể chạy song song 6 hoặc sau 7 tùy việc Android có nằm trong release đầu hay không.
 
 Quy tắc plan:
 
@@ -658,7 +663,7 @@ Quy tắc plan:
 - Plan 6 không đụng kiến trúc lõi; chỉ thêm platform adapter và fixture.
 - Plan 7 chỉ bắt đầu khi acceptance criteria của plan 1-6 đạt.
 - Plan 8 và 9 là sau release simulator; không chặn phạm vi release 1-7.
-- Plan 10 additive cho Android Emulator; có thể chạy song song Plan 5/6 hoặc sau Plan 7. Nếu owner đưa Android vào release đầu, Plan 10 trở thành dependency của Plan 7; nếu không, Apple release 1-7 không bị chặn.
+- Plan 10 additive cho Android Emulator; có thể chạy song song Plan 6 hoặc sau Plan 7; Plan 5 là dependency. Nếu owner đưa Android vào release đầu, Plan 10 trở thành dependency của Plan 7; nếu không, Apple release 1-7 không bị chặn.
 
 ## 17. Acceptance criteria
 
