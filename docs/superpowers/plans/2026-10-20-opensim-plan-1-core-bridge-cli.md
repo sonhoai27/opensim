@@ -582,6 +582,12 @@ Create `Sources/OpenSimCore/Domain/Runtime.swift`:
 ```swift
 import Foundation
 
+public enum RuntimeSource: String, Codable, Sendable {
+    case system
+    case xcodeCatalog = "xcode_catalog"
+    case file
+}
+
 public struct Runtime: Codable, Sendable, Identifiable, Equatable {
     public let id: RuntimeID
     public var name: String
@@ -590,6 +596,9 @@ public struct Runtime: Codable, Sendable, Identifiable, Equatable {
     public var build: String
     public var isAvailable: Bool
     public var path: String?
+    public var sizeBytes: Int64?
+    public var source: RuntimeSource?
+    public var deviceCount: Int?
 
     public init(
         id: RuntimeID,
@@ -598,7 +607,10 @@ public struct Runtime: Codable, Sendable, Identifiable, Equatable {
         version: String,
         build: String,
         isAvailable: Bool,
-        path: String?
+        path: String?,
+        sizeBytes: Int64? = nil,
+        source: RuntimeSource? = nil,
+        deviceCount: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -607,6 +619,9 @@ public struct Runtime: Codable, Sendable, Identifiable, Equatable {
         self.build = build
         self.isAvailable = isAvailable
         self.path = path
+        self.sizeBytes = sizeBytes
+        self.source = source
+        self.deviceCount = deviceCount
     }
 }
 ```
@@ -707,6 +722,10 @@ public enum HardwareButton: String, Codable, Sendable, CaseIterable {
     case side
     case volumeUp
     case volumeDown
+    case back
+    case overview
+    case power
+    case rotate
     case appleTVSelect
     case appleTVMenu
     case appleTVHome
@@ -717,6 +736,8 @@ public enum VideoCodec: String, Codable, Sendable, CaseIterable {
     case hevc
 }
 ```
+
+`back`, `overview`, `power`, `rotate` là additive cho Android. Apple bridge trả `capability_unavailable` cho bốn case này; Android map `back=4`, `overview=187`, `power=26`, `rotate` qua `adb emu rotate` (Android không có `KEYCODE_ROTATE`). Không đổi raw value của case cũ.
 
 Create `Sources/OpenSimCore/Domain/Log.swift`:
 
@@ -1583,6 +1604,10 @@ public enum ErrorCode: String, Codable, Sendable, CaseIterable {
     case adbFailed = "adb_failed"
     case androidImageUnavailable = "android_image_unavailable"
     case grpcUnavailable = "grpc_unavailable"
+    case licenseRequired = "license_required"
+    case stalePlan = "stale_plan"
+    case inventoryUnavailable = "inventory_unavailable"
+    case cancelled = "cancelled"
     case simctlFailed = "simctl_failed"
     case inputFailed = "input_failed"
     case storageScanFailed = "storage_scan_failed"

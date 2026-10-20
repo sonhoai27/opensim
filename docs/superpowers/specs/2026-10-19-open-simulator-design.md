@@ -207,8 +207,8 @@ Bridge chỉ chấp nhận developer dir nằm dưới `/Applications` hoặc `/
 | `StorageItem` | `id`, `category`, `path`, `sizeBytes`, `lastUsedAt`, `safeToDelete`, `reason`, `children` |
 | `MetricSample` | `deviceUDID`, `timestamp`, `cpuPercent`, `memoryBytes`, `processCount`, `diskReadBytes`, `diskWriteBytes` |
 | `AuditEvent` | `id`, `timestamp`, `actor`, `sessionID`, `leaseID`, `action`, `target`, `result`, `durationMs` |
-| `AndroidAVD` | `avdName`, `apiLevel`, `tag`, `abi`, `systemImage`, `state`, `serial`, `emulatorPort`, `grpcPort` |
-| `AndroidSystemImage` | `packagePath`, `apiLevel`, `tag`, `abi`, `installed`, `licenseAccepted` |
+| `AndroidAVD` | `name`, `apiLevel`, `tag`, `abi`, `systemImage` (package `system-images;...`), `imagePath`, `state`, `serial`, `consolePort`, `adbPort`, `grpcPort`, `grpcTokenPath`, `grpcReady`, `dataPath`, `lastBootedAt?` |
+| `AndroidSystemImage` | `packagePath`, `apiLevel`, `tag`, `abi`, `installed`, `licenseAccepted`, `displayName`, `sizeBytes?` |
 
 `Platform` values: `iOS`, `iPadOS` (represented as iOS device family), `watchOS`, `tvOS`, `android`; `visionOS` sau. Android device/runtime IDs use the AVD name and system-image package respectively.
 
@@ -414,7 +414,7 @@ Quy tắc:
 
 Lỗi MCP dùng JSON-RPC error code chuẩn cho protocol; lỗi nghiệp vụ nằm trong `structuredContent.error` theo cùng schema CLI. Các mã:
 
-`xcode_not_found`, `unsupported_xcode`, `private_api_unavailable`, `a11y_unavailable`, `device_not_found`, `device_not_booted`, `device_busy`, `device_name_conflict`, `lease_required`, `lease_conflict`, `lease_revoked`, `runtime_version_unavailable`, `runtime_in_use`, `simctl_failed`, `input_failed`, `storage_scan_failed`, `storage_in_use`, `confirmation_required`, `invalid_argument`, `permission_denied`, `daemon_unavailable`, `android_sdk_not_found`, `avd_not_found`, `emulator_failed`, `adb_failed`, `android_image_unavailable`, `grpc_unavailable`, `internal`.
+`xcode_not_found`, `unsupported_xcode`, `private_api_unavailable`, `a11y_unavailable`, `capability_unavailable`, `device_not_found`, `device_not_booted`, `device_busy`, `device_name_conflict`, `lease_required`, `lease_conflict`, `lease_revoked`, `runtime_version_unavailable`, `runtime_in_use`, `simctl_failed`, `input_failed`, `storage_scan_failed`, `storage_in_use`, `inventory_unavailable`, `confirmation_required`, `invalid_argument`, `permission_denied`, `daemon_unavailable`, `android_sdk_not_found`, `avd_not_found`, `emulator_failed`, `adb_failed`, `android_image_unavailable`, `license_required`, `grpc_unavailable`, `stale_plan`, `cancelled`, `internal`.
 
 Mọi lỗi có `retryable` và `recovery` để agent quyết định bước tiếp theo.
 

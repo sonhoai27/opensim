@@ -40,7 +40,6 @@ Sources/
   OpenSimBridgeUI/
     SimulatorScreenView.swift
   OpenSimAndroid/
-    Services/
     Generated/
   OpenSimProtocol/
     Envelope.swift
@@ -48,7 +47,7 @@ Sources/
     Events.swift
   OpenSimDaemon/
     Server/
-    Platform/
+    Platforms/
     Sessions/
     Storage/
     Metrics/
@@ -81,6 +80,7 @@ Tests/
   OpenSimDaemonTests/
   OpenSimCLITests/
   OpenSimMCPTests/
+  OpenSimAndroidTests/
   OpenSimAppUITests/
   IntegrationTests/
 docs/
@@ -360,8 +360,12 @@ public struct KeyModifiers: Codable, Sendable {
 }
 
 public enum HardwareButton: String, Codable, Sendable {
-    case home, lock, side, volumeUp, volumeDown, appleTVSelect, appleTVMenu, appleTVHome
+    case home, lock, side, volumeUp, volumeDown, back, overview, power, rotate
+    case appleTVSelect, appleTVMenu, appleTVHome
 }
+```
+
+`back`, `overview`, `power`, `rotate` là additive cho Android; Apple bridge trả `capability_unavailable` cho bốn case này. Android map `back=4`, `overview=187`, `power=26`, `home=3`, `volumeUp=24`, `volumeDown=25`; `rotate` dùng `adb emu rotate` vì Android không có `KEYCODE_ROTATE`.
 
 public enum VideoCodec: String, Codable, Sendable { case h264, hevc }
 
