@@ -641,6 +641,8 @@ public func render(source: URL, format: ScreenshotFormat, scale: Double, quality
 
 `SimctlScreenCapture.screens`: chạy `io enumerate`, parse, lấy `Device` qua protocol hẹp `ScreenDeviceReading` (extension `SimctlDeviceService`), lấy profile, trả `ScreenInfo(id: UInt32(index + 1), width, height, scale: main ? profile.scale : 1, rotation: main ? profile.orientation : 0, displayClass)`. `.screenshot` chạy `io screenshot` ra temp PNG, render, chọn đích `out` hoặc `screenshotsDirectory/shot-<uuid>.<ext>`, validate path, ghi file, trả `Screenshot(path:data:nil:format:width:height:scale:capturedAt:)`.
 
+Đo thật 2026-10-20: `simctl io screenshot` headless mất **~41 giây** mỗi lần (cả khi gọi trực tiếp), không phụ thuộc app foreground. `SimctlScreenService` ưu tiên `FramebufferScreenshotter` (SimDeviceScreen.screen.framebufferSurface + CIContext) khi gate render là `ioSurface`; đo được **~0,6 giây**. Simctl vẫn là fallback khi private API không khả dụng.
+
 - [ ] **Step 4: Chạy để thấy pass**
 
 ```bash
@@ -1637,7 +1639,7 @@ public func makeDisplaySurface(for device: DeviceID) throws -> any DisplaySurfac
 }
 ```
 
-`live` tạo gate, `SimctlScreenService`, surface factory theo `gate.render` (`IOSurfaceDisplaySurface`, `ScreenshotPollingSurface`; nhánh `.simDisplayView` đã retired nên dùng IOSurface). Input chỉ có `XCUITestInputService` khi gate chọn `.xcuiTest` và env `OPENSIM_XCUITEST_BUNDLE_ID`; các nhánh simulatorKit/private a11y đã retired nên nil. Multi-touch/button vẫn `unknown` cho tới khi Task 15 xác minh.
+`live` tạo gate, `SimctlScreenService`, surface factory theo `gate.render` (`IOSurfaceDisplaySurface`, `ScreenshotPollingSurface`; nhánh `.simDisplayView` đã retired nên dùng IOSurface), và `FramebufferScreenshotter` khi gate render là ioSurface. Input chỉ có `XCUITestInputService` khi gate chọn `.xcuiTest` và env `OPENSIM_XCUITEST_BUNDLE_ID`; các nhánh simulatorKit/private a11y đã retired nên nil. Multi-touch/button vẫn `unknown` cho tới khi Task 15 xác minh.
 
 `SimctlScreenService` conform thêm `ScreenshotOutWriting` để executor truyền `out`; operation `screen_screenshot` dùng overload này khi có `out`. `UIAutomationService` được inject trong `CLIRuntime.makeBackend` cùng catalog `.plan2()`.
 
@@ -1935,6 +1937,8 @@ Expected: FAIL với `cannot find type 'UIScreenshotCommand' in scope`.
 - [ ] **Step 3: Viết command group**
 
 `UICommand` subcommands: `screenshot`, `record` (start/stop), `info`, `tap`, `swipe`, `long-press`, `drag`, `pinch`, `rotate`, `scroll`, `type`, `key`, `button`, `wait`, `tree`, `find`, `act`.
+
+ArgumentParser tự gọi `validate()` khi parse, nên tổ hợp `--on` + `--x/--y` fail ngay ở bước parse; test không tạo command invalid rồi gọi validate lần hai.
 
 | Lệnh | Operation | Flag chính |
 |---|---|---|

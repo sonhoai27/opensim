@@ -70,6 +70,16 @@ public struct OperationParameters: Sendable {
         return parsed
     }
 
+    public func optionalInt(_ name: String) throws -> Int? {
+        guard let value = optionalString(name) else {
+            return nil
+        }
+        guard let parsed = Int(value) else {
+            throw OpenSimError.invalidArgument("Parameter \(name) must be an integer")
+        }
+        return parsed
+    }
+
     public func double(_ name: String, default defaultValue: Double?) throws -> Double {
         guard let value = optionalString(name) else {
             if let defaultValue {

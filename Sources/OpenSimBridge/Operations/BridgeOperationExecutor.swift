@@ -1,10 +1,6 @@
 import Foundation
 import OpenSimCore
 
-private struct RecordingStartPayload: Encodable {
-    let id: RecordingID
-}
-
 public struct BridgeOperationExecutor: Sendable {
     public let bridge: any SimulatorBridge
     public let crashReports: (any CrashReportReading)?
@@ -220,7 +216,7 @@ public struct BridgeOperationExecutor: Sendable {
             guard scale >= 0.1 && scale <= 4.0 else {
                 throw OpenSimError.invalidArgument("scale must be between 0.1 and 4.0")
             }
-            let quality = try params.int("quality", default: nil)
+            let quality = try params.optionalInt("quality")
             let out = params.optionalString("out")
             if let out, let writer = screen as? any ScreenshotOutWriting {
                 return try encode(
@@ -256,7 +252,7 @@ public struct BridgeOperationExecutor: Sendable {
                 to: params.optionalString("out"),
                 codec: codec
             )
-            return try encode(RecordingStartPayload(id: id))
+            return try encode(RecordingStartResult(id: id))
 
         case "screen_record_stop":
             guard let screen = bridge.screen else {

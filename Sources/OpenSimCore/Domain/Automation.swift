@@ -77,6 +77,14 @@ public struct UIActResult: Codable, Sendable, Equatable {
     }
 }
 
+public struct RecordingStartResult: Codable, Sendable, Equatable {
+    public var id: RecordingID
+
+    public init(id: RecordingID) {
+        self.id = id
+    }
+}
+
 public struct RecordingInfo: Codable, Sendable, Equatable {
     public var id: RecordingID
     public var deviceID: DeviceID
