@@ -31,6 +31,7 @@ public enum DaemonServer {
         DeviceRoutes.register(on: router, services: services)
         SessionRoutes.register(on: router, services: services)
         OperationRoutes.register(on: router, services: services)
+        EventRoutes.register(on: router, services: services)
 
         let baseURL = try loopbackURL("http://127.0.0.1:\(port)")
         let context = DaemonRouteContext(services: services, token: token, baseURL: baseURL)
