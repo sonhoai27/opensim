@@ -840,7 +840,7 @@ final class Plan2CapabilityGateTests: XCTestCase {
     func testPrimaryNeedsDisplaySelectorsAndAccessibilityGetter() {
         var checker = Checker()
         checker.classes = ["SimServiceContext", "SimDisplayView", "SimDeviceScreen", "SimAccessibilityManager"]
-        checker.selectors = ["SimDisplayView.setDevice:", "SimDisplayView.connectedScreen", "SimDisplayView.pixelSize", "SimDeviceScreen.unmaskedSurface", "SimAccessibilityManager.rootElement"]
+        checker.selectors = ["SimDisplayView.setDevice:", "SimDisplayView.connectedScreen", "SimDisplayView.pixelSize", "SimDeviceScreen.screen", "SimAccessibilityManager.rootElement"]
         let result = Plan2CapabilityGate.evaluate(checker: checker, helperConfigured: true)
         XCTAssertEqual(result.render, .simDisplayView)
         XCTAssertEqual(result.input, .simulatorKit)
@@ -850,7 +850,7 @@ final class Plan2CapabilityGateTests: XCTestCase {
     func testFallbacksAndUnavailable() {
         var checker = Checker()
         checker.classes = ["SimServiceContext", "SimDeviceScreen"]
-        checker.selectors = ["SimDeviceScreen.unmaskedSurface"]
+        checker.selectors = ["SimDeviceScreen.screen"]
         XCTAssertEqual(Plan2CapabilityGate.evaluate(checker: checker, helperConfigured: true).render, .ioSurface)
         XCTAssertEqual(Plan2CapabilityGate.evaluate(checker: Checker(), helperConfigured: true).render, .screenshotPolling)
         XCTAssertEqual(Plan2CapabilityGate.evaluate(checker: Checker(), helperConfigured: false).input, .unavailable)
@@ -902,7 +902,7 @@ public static func evaluate(checker: (any SimulatorKitClassChecking)?, helperCon
         && checker?.responds("SimDisplayView", "pixelSize") == true
     let surfaces = core
         && checker?.hasClass("SimDeviceScreen") == true
-        && checker?.responds("SimDeviceScreen", "unmaskedSurface") == true
+        && checker?.responds("SimDeviceScreen", "screen") == true
     let render: RenderBackend = displays ? .simDisplayView : (surfaces ? .ioSurface : .screenshotPolling)
     let input: InputBackend = displays ? .simulatorKit : (helperConfigured ? .xcuiTest : .unavailable)
     let manager = checker?.hasClass("SimAccessibilityManager") == true
@@ -1190,7 +1190,7 @@ final class FallbackTests: XCTestCase {
     func testIOSurfaceSupport() {
         var checker = SurfaceChecker()
         checker.classes = ["SimServiceContext", "SimDeviceScreen"]
-        checker.selectors = ["SimDeviceScreen.unmaskedSurface"]
+        checker.selectors = ["SimDeviceScreen.screen"]
         XCTAssertTrue(IOSurfaceDisplaySurface.isSupported(checker: checker))
         checker.selectors = []
         XCTAssertFalse(IOSurfaceDisplaySurface.isSupported(checker: checker))
@@ -1208,7 +1208,7 @@ Expected: FAIL với `cannot find 'IOSurfaceDisplaySurface' in scope`.
 
 - [ ] **Step 3: Viết IOSurface surface**
 
-`connect` lấy `SimDeviceScreen` object qua `initWithDevice:screenID:` (screenID 1) bằng IMP, đọc `unmaskedSurface`, gán `view.layer.contents = surface`, `contentsGravity = .resizeAspect`; refresh 30 Hz bằng task 33 ms; `pixelSize` từ `IOSurfaceGetWidth/Height`; `screenScale` từ `ScreenControlling.screens`. `isSupported` yêu cầu `SimDeviceScreen` class, selector `unmaskedSurface`, và `SimServiceContext` class. Lỗi thiếu API trả `private_api_unavailable`.
+`connect` lấy `SimDeviceScreen` object qua `initWithDevice:screenID:` (screenID 1) bằng IMP, đọc `.screen`, rồi gọi `framebufferSurface` trên proxy (dynamic forwarding), gán `view.layer.contents = surface`, `contentsGravity = .resizeAspect`; refresh 30 Hz bằng task 33 ms; `pixelSize` từ `IOSurfaceGetWidth/Height`; `screenScale` từ `ScreenControlling.screens`. `isSupported` yêu cầu `SimDeviceScreen` class, selector `screen`, và `SimServiceContext` class. Lỗi thiếu API trả `private_api_unavailable`.
 
 ```swift
 public func connect() async throws {
