@@ -8,6 +8,8 @@ import OpenSimCore
 final class PreviewController: NSObject, NSApplicationDelegate {
     private let snapshotPath: String?
     private let requestedDevice: String?
+    private let autoClick: Bool
+    private let snapshotDelay: TimeInterval
     private var window: NSWindow?
     private var screenView: SimulatorScreenView?
     private var statusLabel: NSTextField?
@@ -15,14 +17,24 @@ final class PreviewController: NSObject, NSApplicationDelegate {
     private var device: Device?
     private var connectionTask: Task<Void, Never>?
     private var didCapture = false
+    private var mouseDownViewPoint: NSPoint?
+    private var mouseMonitor: Any?
 
-    init(snapshotPath: String?, requestedDevice: String?) {
+    init(
+        snapshotPath: String?,
+        requestedDevice: String?,
+        autoClick: Bool,
+        snapshotDelay: TimeInterval
+    ) {
         self.snapshotPath = snapshotPath
         self.requestedDevice = requestedDevice
+        self.autoClick = autoClick
+        self.snapshotDelay = snapshotDelay
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildWindow()
+        installMouseMonitor()
         connectionTask = Task { [weak self] in
             await self?.connect()
         }
@@ -30,6 +42,16 @@ final class PreviewController: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if let bridge {
+            Task.detached {
+                await bridge.shutdownHelper()
+            }
+            usleep(200_000)
+        }
+        return .terminateNow
     }
 
     private func buildWindow() {
@@ -111,6 +133,11 @@ final class PreviewController: NSObject, NSApplicationDelegate {
             try await screen.connect()
             statusLabel?.stringValue = "\(device.name) · \(Int(screen.screenSize.width))×\(Int(screen.screenSize.height))"
             resizeWindow(for: screen.screenSize)
+            if autoClick {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    self?.performSelfClick()
+                }
+            }
             scheduleSnapshotIfNeeded()
         } catch {
             let message = (error as? OpenSimError)?.message ?? String(describing: error)
@@ -151,7 +178,7 @@ final class PreviewController: NSObject, NSApplicationDelegate {
     private func scheduleSnapshotIfNeeded() {
         guard let snapshotPath, !didCapture else { return }
         didCapture = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + snapshotDelay) { [weak self] in
             self?.captureSnapshot(to: snapshotPath)
         }
     }
@@ -182,6 +209,104 @@ final class PreviewController: NSObject, NSApplicationDelegate {
             print("OpenSimPreview snapshot write failed: \(error)")
         }
         NSApp.terminate(nil)
+    }
+
+    private func installMouseMonitor() {
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .leftMouseUp, .leftMouseDragged]
+        ) { [weak self] event in
+            self?.handleMouse(event)
+            return event
+        }
+    }
+
+    private func handleMouse(_ event: NSEvent) {
+        guard let window, event.window === window, let screenView else { return }
+        let point = screenView.convert(event.locationInWindow, from: nil)
+        guard screenView.bounds.contains(point) else { return }
+        switch event.type {
+        case .leftMouseDown:
+            mouseDownViewPoint = point
+        case .leftMouseUp:
+            guard let startPoint = mouseDownViewPoint else { return }
+            mouseDownViewPoint = nil
+            guard let from = screenView.simulatorPoint(fromViewPoint: startPoint),
+                  let to = screenView.simulatorPoint(fromViewPoint: point) else {
+                return
+            }
+            let distance = hypot(point.x - startPoint.x, point.y - startPoint.y)
+            if distance > 8 {
+                sendSwipe(from: from, to: to)
+            } else {
+                sendTap(at: to)
+            }
+        default:
+            break
+        }
+    }
+
+    private func sendSwipe(from: Point, to: Point) {
+        guard let bridge, let device else { return }
+        guard let input = bridge.input else {
+            statusLabel?.stringValue = "drag → helper off"
+            return
+        }
+        statusLabel?.stringValue = "drag (\(Int(from.x)),\(Int(from.y))) → (\(Int(to.x)),\(Int(to.y)))"
+        Task {
+            do {
+                try await input.swipe(on: device.id, from: from, to: to, durationMs: 50)
+            } catch {
+                statusLabel?.stringValue = "Drag failed: \((error as? OpenSimError)?.message ?? String(describing: error))"
+            }
+        }
+    }
+
+    private func sendTap(at point: Point) {
+        guard let bridge, let device else { return }
+        guard let input = bridge.input else {
+            statusLabel?.stringValue = "tap → (\(Int(point.x)), \(Int(point.y))) · helper off"
+            return
+        }
+        statusLabel?.stringValue = "tap → (\(Int(point.x)), \(Int(point.y)))"
+        Task {
+            do {
+                try await input.tap(on: device.id, at: point, settle: false)
+                statusLabel?.stringValue = "tap sent → (\(Int(point.x)), \(Int(point.y)))"
+            } catch {
+                statusLabel?.stringValue = "Tap failed: \((error as? OpenSimError)?.message ?? String(describing: error))"
+            }
+        }
+    }
+
+    private func performSelfClick() {
+        guard let screenView, let window else { return }
+        let devicePoint = Point(x: 210, y: 307)
+        guard let viewPoint = screenView.viewPoint(fromSimulatorPoint: devicePoint) else { return }
+        let windowPoint = screenView.convert(viewPoint, to: nil)
+        let down = NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: windowPoint,
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        )
+        let up = NSEvent.mouseEvent(
+            with: .leftMouseUp,
+            location: windowPoint,
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 0
+        )
+        if let down { NSApp.sendEvent(down) }
+        if let up { NSApp.sendEvent(up) }
     }
 
     @objc private func homePressed() {
@@ -223,11 +348,15 @@ func value(after flag: String) -> String? {
 
 let snapshotPath = value(after: "--snapshot")
 let requestedDevice = value(after: "--device")
+let autoClick = arguments.contains("--auto-click")
+let snapshotDelay = value(after: "--snapshot-delay").flatMap(Double.init) ?? 2
 let application = NSApplication.shared
 application.setActivationPolicy(snapshotPath == nil ? .regular : .accessory)
 let controller = PreviewController(
     snapshotPath: snapshotPath,
-    requestedDevice: requestedDevice
+    requestedDevice: requestedDevice,
+    autoClick: autoClick,
+    snapshotDelay: snapshotDelay
 )
 application.delegate = controller
 application.run()

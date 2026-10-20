@@ -18,6 +18,7 @@ public final class IOSurfaceDisplaySurface: DisplaySurface {
     private var framebufferSurface: IOSurface?
     private var refreshTask: Task<Void, Never>?
     private var isConnected = false
+    private var consecutiveFailures = 0
     private let screenScaleProvider: (@Sendable (DeviceID) async -> CGFloat)?
 
     public init(
@@ -65,11 +66,19 @@ public final class IOSurfaceDisplaySurface: DisplaySurface {
             throw surfaceError("SimDeviceScreen initialization returned nil")
         }
         screenObject = screen
-        do {
-            try updateSurface()
-        } catch {
+        var connected = false
+        for _ in 0..<10 {
+            do {
+                try updateSurface()
+                connected = true
+                break
+            } catch {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+        guard connected else {
             screenObject = nil
-            throw error
+            throw surfaceError("Simulator framebuffer is not ready")
         }
         isConnected = true
         startRefresh()
@@ -99,10 +108,14 @@ public final class IOSurfaceDisplaySurface: DisplaySurface {
                 guard let self, self.isConnected else { return }
                 do {
                     try self.updateSurface()
+                    self.consecutiveFailures = 0
                 } catch {
-                    self.onError?(error as? OpenSimError ?? self.surfaceError("\(error)"))
-                    self.disconnect()
-                    return
+                    self.consecutiveFailures += 1
+                    if self.consecutiveFailures >= 10 {
+                        self.onError?(error as? OpenSimError ?? self.surfaceError("\(error)"))
+                        self.disconnect()
+                        return
+                    }
                 }
             }
         }

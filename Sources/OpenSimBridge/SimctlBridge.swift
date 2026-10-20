@@ -19,6 +19,7 @@ public struct SimctlBridge: SimulatorBridge, DoctorReporting, CrashReportReading
     private let doctorService: any DoctorReporting
     private let capabilityProvider: @Sendable () async -> BridgeCapabilities
     private let displaySurfaceFactory: (@MainActor @Sendable (DeviceID) throws -> any DisplaySurface)?
+    private let helperRunner: XCUITestHelperRunner?
 
     public init(
         devices: any DeviceControlling,
@@ -31,6 +32,7 @@ public struct SimctlBridge: SimulatorBridge, DoctorReporting, CrashReportReading
         input: (any InputControlling)? = nil,
         accessibility: (any AccessibilityReading)? = nil,
         displaySurfaceFactory: (@MainActor @Sendable (DeviceID) throws -> any DisplaySurface)? = nil,
+        helperRunner: XCUITestHelperRunner? = nil,
         capabilityProvider: @escaping @Sendable () async -> BridgeCapabilities
     ) {
         self.devices = devices
@@ -41,9 +43,14 @@ public struct SimctlBridge: SimulatorBridge, DoctorReporting, CrashReportReading
         self.input = input
         self.accessibility = accessibility
         self.displaySurfaceFactory = displaySurfaceFactory
+        self.helperRunner = helperRunner
         self.crashService = crashReports
         self.doctorService = doctor
         self.capabilityProvider = capabilityProvider
+    }
+
+    public func shutdownHelper() async {
+        await helperRunner?.shutdown()
     }
 
     @MainActor
@@ -168,6 +175,7 @@ public struct SimctlBridge: SimulatorBridge, DoctorReporting, CrashReportReading
             input: inputService,
             accessibility: accessibilityService,
             displaySurfaceFactory: displaySurfaceFactory,
+            helperRunner: helperRunner,
             capabilityProvider: capabilityProvider
         )
     }
