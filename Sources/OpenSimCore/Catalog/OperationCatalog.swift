@@ -25,6 +25,14 @@ public struct OperationCatalog: Sendable {
         operations[name]
     }
 
+    public func merging(_ other: OperationCatalog) -> OperationCatalog {
+        var result = self
+        for operation in other.operations.values {
+            result.register(operation)
+        }
+        return result
+    }
+
     public func mcpOperations() -> [Operation] {
         operations.values
             .filter(\.mcpExposed)
