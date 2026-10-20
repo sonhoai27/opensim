@@ -124,6 +124,22 @@ public enum SimctlArguments {
         return SimctlCommand(arguments: ["get_app_container", device.rawValue, bundleID, container])
     }
 
+    public static func listDeviceTypesJSON() -> SimctlCommand {
+        SimctlCommand(arguments: ["list", "devicetypes", "-j"])
+    }
+
+    public static func ioEnumerate(_ device: DeviceID) -> SimctlCommand {
+        SimctlCommand(arguments: ["io", device.rawValue, "enumerate"])
+    }
+
+    public static func ioScreenshot(_ device: DeviceID, path: String) -> SimctlCommand {
+        SimctlCommand(arguments: ["io", device.rawValue, "screenshot", "--type=png", path])
+    }
+
+    public static func ioRecordVideo(_ device: DeviceID, path: String, codec: VideoCodec) -> SimctlCommand {
+        SimctlCommand(arguments: ["io", device.rawValue, "recordVideo", "--codec=\(codec.rawValue)", "--force", path])
+    }
+
     public static func logShow(device: DeviceID, since: String?, last: String?, predicate: String?) -> SimctlCommand {
         var arguments = ["spawn", device.rawValue, "log", "show", "--style", "ndjson", "--info", "--debug"]
         if let since {

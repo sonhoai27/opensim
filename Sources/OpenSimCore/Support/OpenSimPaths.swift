@@ -37,6 +37,28 @@ public struct OpenSimPaths: Sendable {
         logDirectory.appendingPathComponent("daemon.log")
     }
 
+    public var screenshotsDirectory: URL {
+        baseDirectory.appendingPathComponent("screenshots", isDirectory: true)
+    }
+
+    public var recordingsDirectory: URL {
+        baseDirectory.appendingPathComponent("recordings", isDirectory: true)
+    }
+
+    public var recordingStateDirectory: URL {
+        recordingsDirectory.appendingPathComponent("state", isDirectory: true)
+    }
+
+    public func ensureMediaDirectories() throws {
+        for directory in [baseDirectory, screenshotsDirectory, recordingsDirectory, recordingStateDirectory] {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+        }
+    }
+
     public func ensureDirectories() throws {
         try FileManager.default.createDirectory(
             at: baseDirectory,

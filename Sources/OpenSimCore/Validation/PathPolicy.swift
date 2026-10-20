@@ -82,6 +82,43 @@ public enum PathPolicy {
         return url.path
     }
 
+    public static func validateOutputPath(_ path: String, allowedExtensions: [String]) throws -> String {
+        guard path.hasPrefix("/") else {
+            throw OpenSimError.invalidArgument("Path must be absolute: \(path)")
+        }
+        guard !path.contains("\0") else {
+            throw OpenSimError.invalidArgument("Path contains a null byte")
+        }
+        let url = URL(fileURLWithPath: path).standardizedFileURL
+        let parent = url.deletingLastPathComponent().resolvingSymlinksInPath()
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: parent.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw OpenSimError.invalidArgument("Parent directory does not exist: \(parent.path)")
+        }
+        let resolved = parent.appendingPathComponent(url.lastPathComponent)
+        guard isContained(resolved.path, in: clientRoots) else {
+            throw OpenSimError(
+                code: .permissionDenied,
+                message: "Path is outside the allowed roots: \(resolved.path)",
+                details: ["allowed": clientRoots.joined(separator: ",")],
+                recovery: "Write the output under your home directory, /tmp, or /Applications"
+            )
+        }
+        let extensionName = resolved.pathExtension.lowercased()
+        guard allowedExtensions.map({ $0.lowercased() }).contains(extensionName) else {
+            throw OpenSimError.invalidArgument(
+                "Unsupported path extension: \(extensionName)",
+                details: ["allowed": allowedExtensions.joined(separator: ",")]
+            )
+        }
+        var existingIsDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: resolved.path, isDirectory: &existingIsDirectory),
+           existingIsDirectory.boolValue {
+            throw OpenSimError.invalidArgument("Path must be a file: \(resolved.path)")
+        }
+        return resolved.path
+    }
+
     public static func isContained(_ path: String, in roots: [String]) -> Bool {
         let candidate = URL(fileURLWithPath: path).standardizedFileURL.path
         return roots.contains { root in
