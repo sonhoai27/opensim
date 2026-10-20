@@ -241,6 +241,23 @@ final class FallbackTests: XCTestCase {
             action: XCUITestHelperAction(kind: .tapIdentifier, identifier: "fixture-primary-button")
         )
         XCTAssertTrue(tap.ok, tap.error ?? "")
+
+        let afterTap = try await runner.run(
+            device: booted.id,
+            bundleID: "dev.opensim.fixture",
+            action: .tree
+        )
+        XCTAssertTrue(afterTap.ok, afterTap.error ?? "")
+        let afterRoot = XCUITestSnapshotMapper.toUIElement(
+            try XCTUnwrap(afterTap.node),
+            path: "0"
+        )
+        let counter = UIElementMatcher.find(
+            in: afterRoot,
+            selector: ElementSelector(identifier: "fixture-counter-label")
+        ).first
+        XCTAssertEqual(counter?.label, "1")
+        await runner.shutdown()
     }
 
     private func runProcess(

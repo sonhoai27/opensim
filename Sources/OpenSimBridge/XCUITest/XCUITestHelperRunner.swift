@@ -80,12 +80,13 @@ public struct XCUITestHelperResponse: Codable, Sendable, Equatable {
     }
 }
 
-public struct XCUITestHelperRunner: Sendable {
+public actor XCUITestHelperRunner {
     public static let resultMarker = "OPENSIM_HELPER_RESULT:"
 
     public let rootDirectory: URL
     public let cacheDirectory: URL
     public let xcodebuildPath: String
+    private var sessions: [SessionKey: PersistentHelperSession] = [:]
 
     public init(
         rootDirectory: URL = XCUITestHelperRunner.defaultRootDirectory,
@@ -129,44 +130,40 @@ public struct XCUITestHelperRunner: Sendable {
         guard !bundleID.isEmpty else {
             throw OpenSimError.invalidArgument("A bundle identifier is required for the XCUITest helper")
         }
+        let key = SessionKey(device: device, bundleID: bundleID)
+        if let session = sessions[key] {
+            do {
+                return try session.send(action)
+            } catch {
+                sessions[key] = nil
+                session.shutdown()
+            }
+        }
+
         let project = try await ensureProject()
         let xctestrun = try await preparedXCTestRun(project: project, device: device)
-        let copy = xctestrun.deletingLastPathComponent()
-            .appendingPathComponent("helper-\(UUID().uuidString).xctestrun")
-        try FileManager.default.copyItem(at: xctestrun, to: copy)
-        defer { try? FileManager.default.removeItem(at: copy) }
-        try injectEnvironment(
-            into: copy,
-            environment: environment(bundleID: bundleID, action: action)
+        let session = try PersistentHelperSession.start(
+            xctestrun: xctestrun,
+            device: device,
+            bundleID: bundleID,
+            xcodebuildPath: xcodebuildPath,
+            cacheDirectory: cacheDirectory
         )
+        sessions[key] = session
+        do {
+            return try session.send(action)
+        } catch {
+            sessions[key] = nil
+            session.shutdown()
+            throw error
+        }
+    }
 
-        let result = try await HelperProcess.run(
-            executable: xcodebuildPath,
-            arguments: [
-                "test-without-building",
-                "-xctestrun", copy.path,
-                "-destination", "id=\(device.rawValue)",
-                "-only-testing:OpenSimFixtureUITests/OpenSimFixtureUITests/testHelper",
-            ],
-            timeout: 300
-        )
-        guard result.status == 0 else {
-            throw OpenSimError(
-                code: .inputFailed,
-                message: "XCUITest helper exited with status \(result.status)",
-                details: ["stderr": String(result.stderr.suffix(2_000))],
-                recovery: "Run `xcodebuild test-without-building` against the fixture to inspect the failure"
-            )
+    public func shutdown() {
+        for session in sessions.values {
+            session.shutdown()
         }
-        guard let response = parseResult(result.stdout + "\n" + result.stderr) else {
-            throw OpenSimError(
-                code: .inputFailed,
-                message: "XCUITest helper did not emit a result",
-                details: ["stdout": String(result.stdout.suffix(2_000))],
-                recovery: "Check the fixture UI test logs in Xcode"
-            )
-        }
-        return response
+        sessions.removeAll()
     }
 
     private func ensureProject() async throws -> URL {
@@ -282,17 +279,174 @@ public struct XCUITestHelperRunner: Sendable {
         return latest
     }
 
-    private func injectEnvironment(into url: URL, environment: [String: String]) throws {
+    private static func findExecutable(_ name: String) -> String? {
+        let path = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        for directory in path.split(separator: ":") {
+            let candidate = URL(fileURLWithPath: String(directory)).appendingPathComponent(name).path
+            if FileManager.default.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
+        }
+        return nil
+    }
+}
+
+private struct SessionKey: Hashable {
+    let device: DeviceID
+    let bundleID: String
+}
+
+private final class PersistentHelperSession {
+    private let connection: HelperConnection
+    private let process: Process
+    private let logHandle: FileHandle
+    private let logURL: URL
+
+    private init(connection: HelperConnection, process: Process, logHandle: FileHandle, logURL: URL) {
+        self.connection = connection
+        self.process = process
+        self.logHandle = logHandle
+        self.logURL = logURL
+    }
+
+    deinit {
+        shutdown()
+    }
+
+    static func start(
+        xctestrun: URL,
+        device: DeviceID,
+        bundleID: String,
+        xcodebuildPath: String,
+        cacheDirectory: URL
+    ) throws -> PersistentHelperSession {
+        let listener = try HelperListener.open()
+        defer { listener.close() }
+
+        let copy = xctestrun.deletingLastPathComponent()
+            .appendingPathComponent("server-\(UUID().uuidString).xctestrun")
+        try FileManager.default.copyItem(at: xctestrun, to: copy)
+        defer { try? FileManager.default.removeItem(at: copy) }
+        try injectServerEnvironment(
+            into: copy,
+            port: listener.port,
+            bundleID: bundleID
+        )
+
+        try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+        let logURL = cacheDirectory.appendingPathComponent("server-\(device.rawValue).log")
+        FileManager.default.createFile(atPath: logURL.path, contents: nil)
+        guard let logHandle = try? FileHandle(forWritingTo: logURL) else {
+            throw OpenSimError(
+                code: .inputFailed,
+                message: "Could not open the XCUITest helper log",
+                details: ["path": logURL.path]
+            )
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: xcodebuildPath)
+        process.arguments = [
+            "test-without-building",
+            "-xctestrun", copy.path,
+            "-destination", "id=\(device.rawValue)",
+            "-only-testing:OpenSimFixtureUITests/OpenSimFixtureUITests/testHelperServer",
+        ]
+        process.standardOutput = logHandle
+        process.standardError = logHandle
+        do {
+            try process.run()
+        } catch {
+            try? logHandle.close()
+            throw OpenSimError(
+                code: .inputFailed,
+                message: "Could not start the XCUITest helper server: \(error.localizedDescription)"
+            )
+        }
+
+        let clientFD: Int32
+        do {
+            clientFD = try listener.accept(timeoutMs: 240_000)
+        } catch {
+            process.terminate()
+            try? logHandle.close()
+            throw helperError("XCUITest helper did not connect", logURL: logURL)
+        }
+        let connection = HelperConnection(fd: clientFD)
+        do {
+            let ready = try connection.readLine(timeoutMs: 60_000)
+            guard ready.contains("\"ready\":true") else {
+                throw OpenSimError(code: .inputFailed, message: "XCUITest helper sent an invalid handshake")
+            }
+        } catch {
+            connection.close()
+            process.terminate()
+            try? logHandle.close()
+            throw helperError("XCUITest helper handshake failed", logURL: logURL)
+        }
+        return PersistentHelperSession(
+            connection: connection,
+            process: process,
+            logHandle: logHandle,
+            logURL: logURL
+        )
+    }
+
+    func send(_ action: XCUITestHelperAction) throws -> XCUITestHelperResponse {
+        let payload = HelperRequestPayload(action: action)
+        let data = try OpenSimJSON.encoder(pretty: false).encode(payload)
+        guard let line = String(data: data, encoding: .utf8) else {
+            throw OpenSimError(code: .internalError, message: "Could not encode the helper request")
+        }
+        try connection.sendLine(line)
+        let responseLine = try connection.readLine(timeoutMs: 120_000)
+        guard let responseData = responseLine.data(using: .utf8) else {
+            throw OpenSimError(code: .inputFailed, message: "XCUITest helper returned invalid UTF-8")
+        }
+        do {
+            return try JSONDecoder().decode(XCUITestHelperResponse.self, from: responseData)
+        } catch {
+            throw OpenSimError(
+                code: .inputFailed,
+                message: "XCUITest helper returned an invalid response",
+                details: ["response": responseLine]
+            )
+        }
+    }
+
+    func shutdown() {
+        if process.isRunning {
+            try? connection.sendLine(#"{"action":"quit"}"#)
+        }
+        connection.close()
+        for _ in 0..<100 where process.isRunning {
+            usleep(50_000)
+        }
+        if process.isRunning {
+            process.terminate()
+        }
+        try? logHandle.close()
+    }
+
+    private static func injectServerEnvironment(
+        into url: URL,
+        port: UInt16,
+        bundleID: String
+    ) throws {
         let data = try Data(contentsOf: url)
         guard let plist = try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] else {
             throw OpenSimError(code: .inputFailed, message: "Invalid xctestrun file")
         }
+        let environment = [
+            "OPENSIM_HELPER_SERVER_PORT": String(port),
+            "OPENSIM_HELPER_BUNDLE_ID": bundleID,
+        ]
         let updated = inject(plist, environment: environment) as? [String: Any] ?? plist
         let output = try PropertyListSerialization.data(fromPropertyList: updated, format: .xml, options: 0)
         try output.write(to: url, options: .atomic)
     }
 
-    private func inject(_ value: Any, environment: [String: String]) -> Any {
+    private static func inject(_ value: Any, environment: [String: String]) -> Any {
         if var dictionary = value as? [String: Any] {
             if dictionary["TestBundlePath"] != nil {
                 var merged = dictionary["EnvironmentVariables"] as? [String: String] ?? [:]
@@ -312,81 +466,187 @@ public struct XCUITestHelperRunner: Sendable {
         return value
     }
 
-    private func environment(bundleID: String, action: XCUITestHelperAction) -> [String: String] {
-        var environment = [
-            "OPENSIM_HELPER_ACTION": action.kind.rawValue,
-            "OPENSIM_HELPER_BUNDLE_ID": bundleID,
-        ]
-        if let identifier = action.identifier {
-            environment["OPENSIM_HELPER_IDENTIFIER"] = identifier
-        }
-        if let point = action.point {
-            environment["OPENSIM_HELPER_X"] = "\(point.x)"
-            environment["OPENSIM_HELPER_Y"] = "\(point.y)"
-        }
-        if let from = action.from {
-            environment["OPENSIM_HELPER_FROMX"] = "\(from.x)"
-            environment["OPENSIM_HELPER_FROMY"] = "\(from.y)"
-        }
-        if let to = action.to {
-            environment["OPENSIM_HELPER_TOX"] = "\(to.x)"
-            environment["OPENSIM_HELPER_TOY"] = "\(to.y)"
-        }
-        if let durationMs = action.durationMs {
-            environment["OPENSIM_HELPER_DURATION_MS"] = "\(durationMs)"
-        }
-        if let text = action.text {
-            environment["OPENSIM_HELPER_TEXT"] = text
-        }
-        if let scale = action.scale {
-            environment["OPENSIM_HELPER_SCALE"] = "\(scale)"
-        }
-        if let angle = action.angle {
-            environment["OPENSIM_HELPER_ANGLE"] = "\(angle)"
-        }
-        if let deltaX = action.deltaX {
-            environment["OPENSIM_HELPER_DX"] = "\(deltaX)"
-        }
-        if let deltaY = action.deltaY {
-            environment["OPENSIM_HELPER_DY"] = "\(deltaY)"
-        }
-        if let key = action.key {
-            environment["OPENSIM_HELPER_KEY"] = key
-        }
-        if let modifiers = action.modifiers {
-            environment["OPENSIM_HELPER_MODIFIER_COMMAND"] = modifiers.command ? "1" : "0"
-            environment["OPENSIM_HELPER_MODIFIER_SHIFT"] = modifiers.shift ? "1" : "0"
-            environment["OPENSIM_HELPER_MODIFIER_OPTION"] = modifiers.option ? "1" : "0"
-            environment["OPENSIM_HELPER_MODIFIER_CONTROL"] = modifiers.control ? "1" : "0"
-        }
-        if let button = action.button {
-            environment["OPENSIM_HELPER_BUTTON"] = button.rawValue
-        }
-        return environment
+    private static func helperError(_ message: String, logURL: URL) -> OpenSimError {
+        let log = (try? String(contentsOf: logURL, encoding: .utf8)) ?? ""
+        return OpenSimError(
+            code: .inputFailed,
+            message: message,
+            details: ["log": String(log.suffix(2_000))],
+            recovery: "Inspect the fixture UI test log and retry",
+            retryable: true
+        )
+    }
+}
+
+private struct HelperRequestPayload: Encodable {
+    let action: String
+    let identifier: String?
+    let x: Double?
+    let y: Double?
+    let fromX: Double?
+    let fromY: Double?
+    let toX: Double?
+    let toY: Double?
+    let durationMs: Int?
+    let text: String?
+    let scale: Double?
+    let angle: Double?
+    let dx: Double?
+    let dy: Double?
+    let key: String?
+    let modifierCommand: Bool?
+    let modifierShift: Bool?
+    let modifierOption: Bool?
+    let modifierControl: Bool?
+    let button: String?
+
+    init(action: XCUITestHelperAction) {
+        self.action = action.kind.rawValue
+        identifier = action.identifier
+        x = action.point?.x
+        y = action.point?.y
+        fromX = action.from?.x
+        fromY = action.from?.y
+        toX = action.to?.x
+        toY = action.to?.y
+        durationMs = action.durationMs
+        text = action.text
+        scale = action.scale
+        angle = action.angle
+        dx = action.deltaX
+        dy = action.deltaY
+        key = action.key
+        modifierCommand = action.modifiers?.command
+        modifierShift = action.modifiers?.shift
+        modifierOption = action.modifiers?.option
+        modifierControl = action.modifiers?.control
+        button = action.button?.rawValue
+    }
+}
+
+private final class HelperConnection {
+    private let fd: Int32
+    private var buffer = Data()
+    private var closed = false
+
+    init(fd: Int32) {
+        self.fd = fd
     }
 
-    private func parseResult(_ output: String) -> XCUITestHelperResponse? {
-        let lines = output.split(separator: "\n").reversed()
-        for line in lines {
-            guard let range = line.range(of: Self.resultMarker) else { continue }
-            let encoded = line[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let data = Data(base64Encoded: String(encoded)) else { continue }
-            if let response = try? JSONDecoder().decode(XCUITestHelperResponse.self, from: data) {
-                return response
-            }
-        }
-        return nil
+    deinit {
+        close()
     }
 
-    private static func findExecutable(_ name: String) -> String? {
-        let path = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
-        for directory in path.split(separator: ":") {
-            let candidate = URL(fileURLWithPath: String(directory)).appendingPathComponent(name).path
-            if FileManager.default.isExecutableFile(atPath: candidate) {
-                return candidate
+    func sendLine(_ text: String) throws {
+        let bytes = Array((text + "\n").utf8)
+        var offset = 0
+        while offset < bytes.count {
+            let sent = bytes[offset...].withUnsafeBytes { raw in
+                Darwin.send(fd, raw.baseAddress, raw.count, 0)
+            }
+            if sent <= 0 {
+                throw OpenSimError(code: .inputFailed, message: "XCUITest helper connection write failed")
+            }
+            offset += sent
+        }
+    }
+
+    func readLine(timeoutMs: Int32) throws -> String {
+        while true {
+            if let newline = buffer.firstIndex(of: 0x0A) {
+                let line = buffer[..<newline]
+                buffer.removeSubrange(...newline)
+                return String(decoding: line, as: UTF8.self)
+            }
+            var pollDescriptor = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+            let ready = poll(&pollDescriptor, 1, timeoutMs)
+            if ready == 0 {
+                throw OpenSimError(
+                    code: .inputFailed,
+                    message: "XCUITest helper response timed out",
+                    retryable: true
+                )
+            }
+            if ready < 0 {
+                if errno == EINTR { continue }
+                throw OpenSimError(code: .inputFailed, message: "XCUITest helper poll failed: \(errno)")
+            }
+            var chunk = [UInt8](repeating: 0, count: 4_096)
+            let count = recv(fd, &chunk, chunk.count, 0)
+            if count > 0 {
+                buffer.append(chunk, count: count)
+            } else if count == 0 {
+                throw OpenSimError(code: .inputFailed, message: "XCUITest helper connection closed")
+            } else if errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK {
+                throw OpenSimError(code: .inputFailed, message: "XCUITest helper read failed: \(errno)")
             }
         }
-        return nil
+    }
+
+    func close() {
+        guard !closed else { return }
+        closed = true
+        Darwin.close(fd)
+    }
+}
+
+private struct HelperListener {
+    let fd: Int32
+    let port: UInt16
+
+    static func open() throws -> HelperListener {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else {
+            throw OpenSimError(code: .internalError, message: "socket failed: \(errno)")
+        }
+        var reuse: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = 0
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let bindResult = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                bind(fd, sockaddrPointer, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard bindResult == 0, listen(fd, 1) == 0 else {
+            Darwin.close(fd)
+            throw OpenSimError(code: .internalError, message: "bind/listen failed: \(errno)")
+        }
+        var bound = sockaddr_in()
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let nameResult = withUnsafeMutablePointer(to: &bound) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                getsockname(fd, sockaddrPointer, &length)
+            }
+        }
+        guard nameResult == 0 else {
+            Darwin.close(fd)
+            throw OpenSimError(code: .internalError, message: "getsockname failed: \(errno)")
+        }
+        return HelperListener(fd: fd, port: UInt16(bigEndian: bound.sin_port))
+    }
+
+    func accept(timeoutMs: Int32) throws -> Int32 {
+        var pollDescriptor = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+        let ready = poll(&pollDescriptor, 1, timeoutMs)
+        if ready == 0 {
+            throw OpenSimError(code: .inputFailed, message: "Timed out waiting for the XCUITest helper")
+        }
+        if ready < 0 {
+            throw OpenSimError(code: .inputFailed, message: "accept poll failed: \(errno)")
+        }
+        let client = Darwin.accept(fd, nil, nil)
+        guard client >= 0 else {
+            throw OpenSimError(code: .inputFailed, message: "accept failed: \(errno)")
+        }
+        return client
+    }
+
+    func close() {
+        Darwin.close(fd)
     }
 }
 
