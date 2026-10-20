@@ -10,6 +10,7 @@ let package = Package(
         .library(name: "OpenSimBridgeUI", targets: ["OpenSimBridgeUI"]),
         .library(name: "OpenSimProtocol", targets: ["OpenSimProtocol"]),
         .library(name: "OpenSimDaemon", targets: ["OpenSimDaemon"]),
+        .library(name: "OpenSimMCP", targets: ["OpenSimMCP"]),
         .executable(name: "opensim", targets: ["OpenSimCLI"]),
         .executable(name: "OpenSimPreview", targets: ["OpenSimPreview"]),
     ],
@@ -30,6 +31,17 @@ let package = Package(
                 "OpenSimCore",
                 "OpenSimBridge",
                 "OpenSimProtocol",
+                .product(name: "Hummingbird", package: "hummingbird"),
+                .product(name: "Logging", package: "swift-log"),
+                .product(name: "NIOCore", package: "swift-nio"),
+            ]
+        ),
+        .target(
+            name: "OpenSimMCP",
+            dependencies: [
+                "OpenSimCore",
+                "OpenSimProtocol",
+                "OpenSimDaemon",
                 .product(name: "Hummingbird", package: "hummingbird"),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "NIOCore", package: "swift-nio"),
@@ -62,6 +74,10 @@ let package = Package(
             ]
         ),
         .testTarget(name: "OpenSimBridgeTests", dependencies: ["OpenSimBridge", "OpenSimCore"]),
+        .testTarget(
+            name: "OpenSimMCPTests",
+            dependencies: ["OpenSimMCP", "OpenSimDaemon", "OpenSimProtocol", "OpenSimCore"]
+        ),
         .testTarget(
             name: "OpenSimBridgeUITests",
             dependencies: ["OpenSimBridgeUI", "OpenSimBridge", "OpenSimCore"]
