@@ -12,6 +12,31 @@
 
 **Plan 1:** `docs/superpowers/plans/2026-10-20-opensim-plan-1-core-bridge-cli.md`
 
+## Execution notes (đã thi công 2026-10-20)
+
+Toàn bộ 16 task đã chạy xong; 182 unit test xanh (4 skip theo môi trường) và 6/6
+`Plan3DaemonIntegrationTests` xanh với `OPENSIM_INTEGRATION=1`. Điểm plan phải sửa khi thi công:
+
+- **Hummingbird 2.28 API khác plan.** `HTTPResponseStatus` → `HTTPResponse.Status`; `Request.headers` là
+  `HTTPFields` nên tra theo `HTTPField.Name` (hoặc `request.head.authority` cho Host, vì `.host` bị
+  `unavailable`); `application.server` là `HTTPServerBuilder` nên không có `server.shutdown()` —
+  `RunningDaemonServer.stop()` huỷ Task chạy `runService()` để ServiceLifecycle shutdown êm.
+  Thêm `import HTTPTypes` khi cần `HTTPField.Name`.
+- **`DaemonStateStore` không giữ `FileManager`** (không `Sendable` ở Swift 6); gọi `FileManager.default` trong method.
+- **`Operation` trùng tên `Foundation.Operation`** trong `OpenSimDaemon`/`OpenSimMCP`: phải ghi `OpenSimCore.Operation`.
+- **Test logger của plan ghi đè log thật** `~/Library/Logs/OpenSim` (vì `logDirectory` không phụ thuộc
+  `baseDirectory` — đúng theo spec). Đã đổi sang `DaemonLogger.makeLogger(fileURL:)` chỉ trỏ thư mục tạm.
+- **Test `testRootHasFiveGroups` đỏ sẵn từ Plan 2** (nhóm `ui` chưa được cập nhật kỳ vọng). Đã thay bằng
+  test phủ đủ 9 nhóm CLI.
+- **JSON-RPC**: response mã hoá `"id":null` tường minh (synthesized `encodeIfPresent` làm mất key, sai spec);
+  test bắt lỗi parse assert trên dây truyền, không assert qua decode (Swift map null → `nil`).
+- **`opensim mcp --http`** in URL endpoint rồi thoát (daemon đã phục vụ `/mcp`), thay vì vòng lặp `sleep` vô hạn.
+- **`DaemonCommandBackend`**: plan gọi `sessionID()` ngay sau khi khai `let sessionID` (xâm phạm tên) — đổi helper
+  thành `ensureSession()`.
+- **Integration test dùng một pipe chung cho stdout+stderr**: đọc hai pipe theo trình tự có thể deadlock khi
+  đầy buffer, mà CLI ghi envelope lỗi ra stderr.
+
+
 ## Global Constraints
 
 - Plan 3 phụ thuộc Plan 1. Không đổi tên type/protocol/file đã có trong Plan 1.
@@ -124,7 +149,7 @@
 - Consumes: `OpenSimJSON`, `OpenSimDate`, `BridgeCapabilities`, `OpenSimVersion`.
 - Produces: `JSONValue`; `DaemonState`; `HealthResponse`; target `OpenSimProtocol`.
 
-- [ ] **Step 1: Viết test thất bại**
+- [x] **Step 1: Viết test thất bại**
 
 Create `Tests/OpenSimProtocolTests/ProtocolCodingTests.swift`:
 
@@ -206,7 +231,7 @@ final class ProtocolCodingTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Chạy để thấy fail**
+- [x] **Step 2: Chạy để thấy fail**
 
 Run:
 
@@ -216,7 +241,7 @@ swift test --filter ProtocolCodingTests
 
 Expected: FAIL với `no such module 'OpenSimProtocol'`.
 
-- [ ] **Step 3: Viết package và protocol foundation**
+- [x] **Step 3: Viết package và protocol foundation**
 
 Modify `Package.swift` để thêm product/target protocol (chưa thêm daemon/MCP; các target đó được thêm khi task tạo source tương ứng):
 
@@ -425,7 +450,7 @@ public struct HealthResponse: Codable, Sendable, Equatable {
 }
 ```
 
-- [ ] **Step 4: Chạy để thấy pass**
+- [x] **Step 4: Chạy để thấy pass**
 
 Run:
 
@@ -435,7 +460,7 @@ swift test --filter ProtocolCodingTests
 
 Expected: PASS; `Executed 4 tests, with 0 failures`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Package.swift Sources/OpenSimProtocol Tests/OpenSimProtocolTests/ProtocolCodingTests.swift
@@ -457,7 +482,7 @@ git commit -m "feat(protocol): add daemon state health and json value"
 - Consumes: `SessionID`, `LeaseID`, `DeviceID`, `Lease`, `Session`, `LeaseMode`, `AuditEvent`, `OperationCatalog.plan1()`.
 - Produces: `OperationRequest`, `OperationResult`; `CreateSessionRequest`, `AcquireLeaseRequest`, `HeartbeatRequest`, `LeaseReleaseResult`, `SessionListResult`; `EventType`, `DaemonEvent`, payload structs; `OperationCatalog.plan3()`.
 
-- [ ] **Step 1: Viết test thất bại**
+- [x] **Step 1: Viết test thất bại**
 
 Append vào `Tests/OpenSimProtocolTests/ProtocolCodingTests.swift` trước dấu `}` cuối file:
 
@@ -513,7 +538,7 @@ Append vào `Tests/OpenSimProtocolTests/ProtocolCodingTests.swift` trước dấ
     }
 ```
 
-- [ ] **Step 2: Chạy để thấy fail**
+- [x] **Step 2: Chạy để thấy fail**
 
 Run:
 
@@ -523,7 +548,7 @@ swift test --filter ProtocolCodingTests
 
 Expected: FAIL với `cannot find type 'OperationRequest' in scope`.
 
-- [ ] **Step 3: Viết protocol types và Plan 3 catalog**
+- [x] **Step 3: Viết protocol types và Plan 3 catalog**
 
 Create `Sources/OpenSimProtocol/Operations.swift`:
 
@@ -782,7 +807,7 @@ public enum Plan3Operations {
 }
 ```
 
-- [ ] **Step 4: Chạy để thấy pass**
+- [x] **Step 4: Chạy để thấy pass**
 
 Run:
 
@@ -792,7 +817,7 @@ swift test --filter ProtocolCodingTests
 
 Expected: PASS; `Executed 8 tests, with 0 failures`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/OpenSimProtocol/Operations.swift Sources/OpenSimProtocol/Sessions.swift Sources/OpenSimProtocol/Events.swift Sources/OpenSimCore/Catalog/Plan3Operations.swift Tests/OpenSimProtocolTests/ProtocolCodingTests.swift
@@ -815,7 +840,7 @@ git commit -m "feat(protocol): add operations sessions and events"
 - Consumes: `OpenSimPaths`, `DaemonState`, `OpenSimJSON`, `OpenSimError`.
 - Produces: `TokenGenerator.make(byteCount:)`; `ProcessLock(path:)`, `.release()`; `PortAllocator.freePort()`; `DaemonStateStore(paths:).write(_:)`, `.read()`, `.remove()`.
 
-- [ ] **Step 1: Viết test thất bại**
+- [x] **Step 1: Viết test thất bại**
 
 Create `Tests/OpenSimDaemonTests/StateAndPortTests.swift`:
 
@@ -879,7 +904,7 @@ final class StateAndPortTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Chạy để thấy fail**
+- [x] **Step 2: Chạy để thấy fail**
 
 Run:
 
@@ -889,7 +914,7 @@ swift test --filter StateAndPortTests
 
 Expected: FAIL với `cannot find 'TokenGenerator' in scope`.
 
-- [ ] **Step 3: Viết support và state store**
+- [x] **Step 3: Viết support và state store**
 
 Modify `Package.swift`: thêm ba dependency:
 
@@ -1101,7 +1126,7 @@ public struct DaemonStateStore: Sendable {
 }
 ```
 
-- [ ] **Step 4: Chạy để thấy pass**
+- [x] **Step 4: Chạy để thấy pass**
 
 Run:
 
@@ -1111,7 +1136,7 @@ swift test --filter StateAndPortTests
 
 Expected: PASS; `Executed 4 tests, with 0 failures`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/OpenSimDaemon/Support Sources/OpenSimDaemon/State Tests/OpenSimDaemonTests/StateAndPortTests.swift
@@ -1129,7 +1154,7 @@ git commit -m "feat(daemon): add token state lock and port allocation"
 - Consumes: `Session`, `Lease`, `LeaseMode`, `SessionID`, `LeaseID`, `DeviceID`, `OpenSimError`, `OpenSimDate`.
 - Produces: `SessionManager(now:idGenerator:).create(clientKind:clientName:)`, `.close(_:)`, `.list()`, `.session(_:)`; `LeaseManager(defaultTTL:takeoverGrace:now:idGenerator:).acquire(device:session:mode:ttlSeconds:ownerName:takeover:)`, `.heartbeat(_:session:ttlSeconds:)`, `.release(_:session:)`, `.releaseAll(session:)`, `.validate(device:leaseID:session:)`, `.expireIfNeeded()`, `.activeLeases()`, `.leases(for:)`.
 
-- [ ] **Step 1: Viết test thất bại**
+- [x] **Step 1: Viết test thất bại**
 
 Create `Tests/OpenSimDaemonTests/LeaseManagerTests.swift`:
 
@@ -1261,7 +1286,7 @@ final class LeaseManagerTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Chạy để thấy fail**
+- [x] **Step 2: Chạy để thấy fail**
 
 Run:
 
@@ -1271,7 +1296,7 @@ swift test --filter LeaseManagerTests
 
 Expected: FAIL với `cannot find 'LeaseManager' in scope`.
 
-- [ ] **Step 3: Viết session và lease managers**
+- [x] **Step 3: Viết session và lease managers**
 
 Create `Sources/OpenSimDaemon/Sessions/SessionManager.swift`:
 
@@ -1526,7 +1551,7 @@ public actor LeaseManager {
 }
 ```
 
-- [ ] **Step 4: Chạy để thấy pass**
+- [x] **Step 4: Chạy để thấy pass**
 
 Run:
 
@@ -1536,7 +1561,7 @@ swift test --filter LeaseManagerTests
 
 Expected: PASS; `Executed 7 tests, with 0 failures`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/OpenSimDaemon/Sessions Tests/OpenSimDaemonTests/LeaseManagerTests.swift
@@ -1554,7 +1579,7 @@ git commit -m "feat(daemon): add session and lease managers"
 - Consumes: `AuditEvent`, `DaemonEvent`, `EventType`, `JSONValue`.
 - Produces: `AuditWriter(fileURL:maxBytes:).append(_:)`; `EventHub.publish(type:payload:)`, `.subscribe(after:)`, `.replay(after:)`, `.eventCount()`.
 
-- [ ] **Step 1: Viết test thất bại**
+- [x] **Step 1: Viết test thất bại**
 
 Create `Tests/OpenSimDaemonTests/AuditAndEventTests.swift`:
 
@@ -1628,7 +1653,7 @@ final class AuditAndEventTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Chạy để thấy fail**
+- [x] **Step 2: Chạy để thấy fail**
 
 Run:
 
@@ -1638,7 +1663,7 @@ swift test --filter AuditAndEventTests
 
 Expected: FAIL với `cannot find 'AuditWriter' in scope`.
 
-- [ ] **Step 3: Viết audit và event hub**
+- [x] **Step 3: Viết audit và event hub**
 
 Create `Sources/OpenSimDaemon/Audit/AuditWriter.swift`:
 
@@ -1781,7 +1806,7 @@ public actor EventHub {
 }
 ```
 
-- [ ] **Step 4: Chạy để thấy pass**
+- [x] **Step 4: Chạy để thấy pass**
 
 Run:
 
@@ -1791,7 +1816,7 @@ swift test --filter AuditAndEventTests
 
 Expected: PASS; `Executed 2 tests, with 0 failures`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/OpenSimDaemon/Audit Sources/OpenSimDaemon/Events Tests/OpenSimDaemonTests/AuditAndEventTests.swift
@@ -1808,7 +1833,7 @@ git commit -m "feat(daemon): add audit writer and event hub"
 - Consumes: `OperationCatalog.plan3()`, `BridgeOperationExecutor`, `SessionManager`, `LeaseManager`, `AuditWriter`, `EventHub`, `SimulatorBridge`, `OperationRequest`.
 - Produces: `OperationDispatcher(catalog:executor:bridge:sessions:leases:audit:events:logger:).dispatch(_:) -> OperationResult`; xử lý `session_list`, `session_acquire`, `session_release`; guard `requiredService`, lease, confirm.
 
-- [ ] **Step 1: Viết test thất bại**
+- [x] **Step 1: Viết test thất bại**
 
 Create `Tests/OpenSimDaemonTests/OperationDispatcherTests.swift`:
 
@@ -1950,7 +1975,7 @@ final class OperationDispatcherTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Chạy để thấy fail**
+- [x] **Step 2: Chạy để thấy fail**
 
 Run:
 
@@ -1960,7 +1985,7 @@ swift test --filter OperationDispatcherTests
 
 Expected: FAIL với `cannot find 'OperationDispatcher' in scope`.
 
-- [ ] **Step 3: Viết dispatcher**
+- [x] **Step 3: Viết dispatcher**
 
 Create `Sources/OpenSimDaemon/Operations/OperationDispatcher.swift`:
 
@@ -2206,7 +2231,7 @@ public struct OperationDispatcher: Sendable {
 }
 ```
 
-- [ ] **Step 4: Chạy để thấy pass**
+- [x] **Step 4: Chạy để thấy pass**
 
 Run:
 
@@ -2216,7 +2241,7 @@ swift test --filter OperationDispatcherTests
 
 Expected: PASS; `Executed 4 tests, with 0 failures`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/OpenSimDaemon/Operations Tests/OpenSimDaemonTests/OperationDispatcherTests.swift
@@ -2241,7 +2266,7 @@ git commit -m "feat(daemon): add catalog operation dispatcher"
 - Consumes: Hummingbird `Router`, `Request`, `Response`, `Application`, `BasicRequestContext`, `RouterMiddleware`; `DaemonServices`; `OperationDispatcher`.
 - Produces: `DeviceActionRequest`, `DeviceActionResponse`; `DaemonServices`; `DaemonRouteProvider`, `DaemonRouteContext`; `DaemonHTTP.json`, `.envelopeError`, `.decode`; `SecurityMiddleware`, `RequestSecurity`; `DaemonServer.start(services:token:port:routeProviders:)`; `RunningDaemonServer.stop()`; health/device routes.
 
-- [ ] **Step 1: Viết test thất bại**
+- [x] **Step 1: Viết test thất bại**
 
 Create `Tests/OpenSimDaemonTests/SecurityTests.swift`:
 
@@ -2391,7 +2416,7 @@ final class HTTPRoutesTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Chạy để thấy fail**
+- [x] **Step 2: Chạy để thấy fail**
 
 Run:
 
@@ -2402,7 +2427,7 @@ swift test --filter HTTPRoutesTests
 
 Expected: FAIL với `cannot find 'RequestSecurity' in scope` và `cannot find 'DaemonServer' in scope`.
 
-- [ ] **Step 3: Viết server foundation**
+- [x] **Step 3: Viết server foundation**
 
 Create `Sources/OpenSimProtocol/DeviceActions.swift`:
 
@@ -2840,7 +2865,7 @@ private func XCTUnwrapURL(_ value: String) throws -> URL {
 }
 ```
 
-- [ ] **Step 4: Chạy để thấy pass**
+- [x] **Step 4: Chạy để thấy pass**
 
 Run:
 
@@ -2851,7 +2876,7 @@ swift test --filter HTTPRoutesTests
 
 Expected: PASS; `SecurityTests` có `Executed 3 tests, with 0 failures`; `HTTPRoutesTests` có `Executed 1 test, with 0 failures`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/OpenSimProtocol/DeviceActions.swift Sources/OpenSimDaemon/Server Tests/OpenSimDaemonTests/SecurityTests.swift Tests/OpenSimDaemonTests/HTTPRoutesTests.swift
@@ -2872,7 +2897,7 @@ git commit -m "feat(daemon): add http server security and device routes"
 - Consumes: `SessionManager`, `LeaseManager`, `OperationDispatcher`, `CreateSessionRequest`, `AcquireLeaseRequest`, `HeartbeatRequest`, `LeaseReleaseResult`.
 - Produces: `ErrorEnvelopeMiddleware`; `DaemonHTTP.status(for:)`; routes `/v1/sessions`, `/v1/leases`, `/v1/operations`.
 
-- [ ] **Step 1: Viết test thất bại**
+- [x] **Step 1: Viết test thất bại**
 
 Create `Tests/OpenSimDaemonTests/SessionAndOperationRoutesTests.swift`:
 
@@ -3091,7 +3116,7 @@ final class SessionAndOperationRoutesTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Chạy để thấy fail**
+- [x] **Step 2: Chạy để thấy fail**
 
 Run:
 
@@ -3101,7 +3126,7 @@ swift test --filter SessionAndOperationRoutesTests
 
 Expected: FAIL với `cannot find type 'ErrorEnvelopeMiddleware' in scope` hoặc 404 route.
 
-- [ ] **Step 3: Viết routes và error middleware**
+- [x] **Step 3: Viết routes và error middleware**
 
 Create `Sources/OpenSimDaemon/Server/ErrorEnvelopeMiddleware.swift`:
 
@@ -3299,7 +3324,7 @@ Modify `DaemonServer.swift` middleware/registration:
         OperationRoutes.register(on: router, services: services)
 ```
 
-- [ ] **Step 4: Chạy để thấy pass**
+- [x] **Step 4: Chạy để thấy pass**
 
 Run:
 
@@ -3309,7 +3334,7 @@ swift test --filter SessionAndOperationRoutesTests
 
 Expected: PASS; `Executed 3 tests, with 0 failures`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/OpenSimDaemon/Server Tests/OpenSimDaemonTests/SessionAndOperationRoutesTests.swift
@@ -3328,7 +3353,7 @@ git commit -m "feat(daemon): add session lease and operation routes"
 - Consumes: `DaemonEvent`, `EventHub`, Hummingbird `Response`, `AsyncThrowingStream`, `ByteBuffer`.
 - Produces: `SSEFrame.encode(_:)`, `.comment(_:)`; `GET /v1/events` với `Last-Event-ID` replay.
 
-- [ ] **Step 1: Viết test thất bại**
+- [x] **Step 1: Viết test thất bại**
 
 Create `Tests/OpenSimDaemonTests/SSETests.swift`:
 
@@ -3378,7 +3403,7 @@ final class SSETests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Chạy để thấy fail**
+- [x] **Step 2: Chạy để thấy fail**
 
 Run:
 
@@ -3388,7 +3413,7 @@ swift test --filter SSETests
 
 Expected: FAIL với `cannot find 'SSEFrame' in scope`.
 
-- [ ] **Step 3: Viết SSE frame và route**
+- [x] **Step 3: Viết SSE frame và route**
 
 Create `Sources/OpenSimDaemon/Events/SSEFrame.swift`:
 
@@ -3468,7 +3493,7 @@ Modify `DaemonServer.swift` để đăng ký event route:
         EventRoutes.register(on: router, services: services)
 ```
 
-- [ ] **Step 4: Chạy để thấy pass**
+- [x] **Step 4: Chạy để thấy pass**
 
 Run:
 
@@ -3478,7 +3503,7 @@ swift test --filter SSETests
 
 Expected: PASS; `Executed 2 tests, with 0 failures`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/OpenSimDaemon/Events/SSEFrame.swift Sources/OpenSimDaemon/Server/Routes/EventRoutes.swift Sources/OpenSimDaemon/Server/DaemonServer.swift Tests/OpenSimDaemonTests/SSETests.swift
@@ -3498,7 +3523,7 @@ git commit -m "feat(daemon): add sse frames and event stream"
 
 > **Sửa khi thi công:** `OpenSimPaths.logDirectory` luôn trỏ `~/Library/Logs/OpenSim` (đúng spec dòng 572), KHÔNG phụ thuộc `baseDirectory`. Test cũ dùng `OpenSimPaths(baseDirectory: /tmp...)` nên ghi đè log thật của máy — đã đổi sang `makeLogger(fileURL:)` trỏ thư mục tạm.
 
-- [ ] **Step 1: Viết test thất bại**
+- [x] **Step 1: Viết test thất bại**
 
 Create `Tests/OpenSimDaemonTests/DaemonLoggerTests.swift`:
 
@@ -3547,7 +3572,7 @@ final class DaemonLoggerTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Chạy để thấy fail**
+- [x] **Step 2: Chạy để thấy fail**
 
 Run:
 
@@ -3557,7 +3582,7 @@ swift test --filter DaemonLoggerTests
 
 Expected: FAIL với `cannot find 'DaemonLogger' in scope`.
 
-- [ ] **Step 3: Viết logger và runner**
+- [x] **Step 3: Viết logger và runner**
 
 Create `Sources/OpenSimDaemon/Support/DaemonLogger.swift`:
 
@@ -3831,7 +3856,7 @@ private final class SignalTrap: @unchecked Sendable {
 }
 ```
 
-- [ ] **Step 4: Chạy để thấy pass**
+- [x] **Step 4: Chạy để thấy pass**
 
 Run:
 
@@ -3841,7 +3866,7 @@ swift test --filter DaemonLoggerTests
 
 Expected: PASS; `Executed 1 test, with 0 failures`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/OpenSimDaemon/Support/DaemonLogger.swift Sources/OpenSimDaemon/Runtime Tests/OpenSimDaemonTests/DaemonLoggerTests.swift
@@ -3861,7 +3886,7 @@ git commit -m "feat(daemon): add file logger and daemon runner"
 - Consumes: `OpenSimPaths`, `OpenSimVersion`, `DaemonState`, `HealthResponse`, `OperationRequest`, `Session`, `Lease`.
 - Produces: `LaunchAgentManager.install()`, `.bootstrap()`, `.bootout()`, `.kickstart()`, `.isLoaded()`, `.defaultPlistURL()`; `DaemonClient.health()`, `.devices()`, `.operation(_:)`, `.createSession(clientKind:clientName:)`, `.closeSession(_:)`, `.acquireLease(_:)`, `.heartbeatLease(_:sessionID:ttlSeconds:)`, `.releaseLease(_:sessionID:)`, `.events(lastEventID:)`; `DaemonLauncher.ensureRunning()`.
 
-- [ ] **Step 1: Viết test thất bại**
+- [x] **Step 1: Viết test thất bại**
 
 Create `Tests/OpenSimDaemonTests/LaunchAgentTests.swift`:
 
@@ -3938,7 +3963,7 @@ final class DaemonClientTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Chạy để thấy fail**
+- [x] **Step 2: Chạy để thấy fail**
 
 Run:
 
@@ -3949,7 +3974,7 @@ swift test --filter DaemonClientTests
 
 Expected: FAIL với `cannot find 'LaunchAgentManager' in scope` và `cannot find 'DaemonClient' in scope`.
 
-- [ ] **Step 3: Viết launch agent và client**
+- [x] **Step 3: Viết launch agent và client**
 
 Create `Sources/OpenSimDaemon/LaunchAgent/LaunchAgentManager.swift`:
 
@@ -4276,7 +4301,7 @@ public struct DaemonLauncher: Sendable {
 }
 ```
 
-- [ ] **Step 4: Chạy để thấy pass**
+- [x] **Step 4: Chạy để thấy pass**
 
 Run:
 
@@ -4287,7 +4312,7 @@ swift test --filter DaemonClientTests
 
 Expected: PASS; `LaunchAgentTests` có `Executed 1 test, with 0 failures`; `DaemonClientTests` có `Executed 1 test, with 0 failures`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/OpenSimDaemon/LaunchAgent Sources/OpenSimDaemon/Client Tests/OpenSimDaemonTests/LaunchAgentTests.swift Tests/OpenSimDaemonTests/DaemonClientTests.swift
@@ -4312,7 +4337,7 @@ git commit -m "feat(daemon): add launch agent and http client"
 - Consumes: `DaemonLauncher`, `DaemonClient`, `OperationCatalog.plan3()`, `AcquireLeaseRequest`, `SessionListResult`.
 - Produces: `GlobalOptions.direct`, `.session`, `.directCopy()`; `DaemonCommandBackend`; `DaemonCommand`; `SessionCommand`; `CLIRuntime.makeBackend` async; root command có bảy nhóm.
 
-- [ ] **Step 1: Viết test thất bại**
+- [x] **Step 1: Viết test thất bại**
 
 Modify `Tests/OpenSimCLITests/CommandParsingTests.swift`: thay test `testRootHasFiveGroups` bằng:
 
@@ -4340,7 +4365,7 @@ Modify `Tests/OpenSimCLITests/CommandParsingTests.swift`: thay test `testRootHas
     }
 ```
 
-- [ ] **Step 2: Chạy để thấy fail**
+- [x] **Step 2: Chạy để thấy fail**
 
 Run:
 
@@ -4350,7 +4375,7 @@ swift test --filter CommandParsingTests
 
 Expected: FAIL với `cannot find type 'DaemonStatusCommand' in scope` và root chỉ có năm nhóm.
 
-- [ ] **Step 3: Viết CLI switch và commands**
+- [x] **Step 3: Viết CLI switch và commands**
 
 Modify target `OpenSimCLI` trong `Package.swift` để thêm `OpenSimProtocol` và `OpenSimDaemon`:
 
@@ -4870,7 +4895,7 @@ Modify `DoctorCommand.swift`: đổi dòng gọi `CLIRuntime.run` thành dùng `
             globals: globals.directCopy(),
 ```
 
-- [ ] **Step 4: Chạy để thấy pass**
+- [x] **Step 4: Chạy để thấy pass**
 
 Run:
 
@@ -4881,7 +4906,7 @@ swift build
 
 Expected: PASS; `Executed 10 tests, with 0 failures`; `Build complete!`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/OpenSimCLI Tests/OpenSimCLITests/CommandParsingTests.swift
@@ -4904,7 +4929,7 @@ git commit -m "feat(cli): switch to daemon backend and add daemon session comman
 - Consumes: `OperationCatalog.plan3()`, `Operation`, `DaemonClient`, `JSONValue`, `OpenSimError`.
 - Produces: `JSONRPCID`, `JSONRPCRequest`, `JSONRPCResponse`, `JSONRPCError`, `JSONRPCErrorCode`; `MCPToolDefinition`; `ToolCatalogAdapter.tools(from:)`; `MCPToolCalling`; `MCPHandler.handle(_:)`; `MCPToolSession.call(tool:arguments:)`.
 
-- [ ] **Step 1: Viết test thất bại**
+- [x] **Step 1: Viết test thất bại**
 
 Create `Tests/OpenSimMCPTests/MCPHandlerTests.swift`:
 
@@ -5018,7 +5043,7 @@ final class ToolCatalogAdapterTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Chạy để thấy fail**
+- [x] **Step 2: Chạy để thấy fail**
 
 Run:
 
@@ -5029,7 +5054,7 @@ swift test --filter ToolCatalogAdapterTests
 
 Expected: FAIL với `cannot find type 'MCPHandler' in scope`.
 
-- [ ] **Step 3: Viết MCP core**
+- [x] **Step 3: Viết MCP core**
 
 Modify `Package.swift`: thêm product và target MCP:
 
@@ -5484,7 +5509,7 @@ public struct MCPHandler: Sendable {
 }
 ```
 
-- [ ] **Step 4: Chạy để thấy pass**
+- [x] **Step 4: Chạy để thấy pass**
 
 Run:
 
@@ -5495,7 +5520,7 @@ swift test --filter ToolCatalogAdapterTests
 
 Expected: PASS; `MCPHandlerTests` có `Executed 4 tests, with 0 failures`; `ToolCatalogAdapterTests` có `Executed 2 tests, with 0 failures`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/OpenSimMCP Tests/OpenSimMCPTests
@@ -5516,7 +5541,7 @@ git commit -m "feat(mcp): add jsonrpc handler and dynamic tool catalog"
 - Consumes: `MCPHandler`, `MCPToolSession`, `DaemonLauncher`, `OpenSimPaths`.
 - Produces: `StdioTransport(handler:).run()`, `.handleLine(_:)`; `MCPCommand --stdio/--http`; root command tám nhóm.
 
-- [ ] **Step 1: Viết test thất bại**
+- [x] **Step 1: Viết test thất bại**
 
 Create `Tests/OpenSimMCPTests/StdioTransportTests.swift`:
 
@@ -5577,7 +5602,7 @@ Trong `Tests/OpenSimCLITests/CommandParsingTests.swift`, thay test `testRootHasS
     }
 ```
 
-- [ ] **Step 2: Chạy để thấy fail**
+- [x] **Step 2: Chạy để thấy fail**
 
 Run:
 
@@ -5588,7 +5613,7 @@ swift test --filter CommandParsingTests
 
 Expected: FAIL với `cannot find type 'StdioTransport' in scope`.
 
-- [ ] **Step 3: Viết stdio và CLI command**
+- [x] **Step 3: Viết stdio và CLI command**
 
 Modify target `OpenSimCLI` trong `Package.swift` để thêm `OpenSimMCP`:
 
@@ -5721,7 +5746,7 @@ public struct MCPCommand: AsyncParsableCommand {
 
 Modify `Sources/OpenSimCLI/OpenSimCommand.swift` để thêm `MCPCommand.self` vào `subcommands`.
 
-- [ ] **Step 4: Chạy để thấy pass**
+- [x] **Step 4: Chạy để thấy pass**
 
 Run:
 
@@ -5733,7 +5758,7 @@ swift build
 
 Expected: PASS; `StdioTransportTests` có `Executed 3 tests, with 0 failures`; `CommandParsingTests` có `Executed 11 tests, with 0 failures`; `Build complete!`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/OpenSimMCP/Stdio Sources/OpenSimCLI/Commands/MCPCommand.swift Sources/OpenSimCLI/OpenSimCommand.swift Tests/OpenSimMCPTests/StdioTransportTests.swift Tests/OpenSimCLITests/CommandParsingTests.swift
@@ -5753,7 +5778,7 @@ git commit -m "feat(mcp): add stdio transport and opensim mcp command"
 - Consumes: `DaemonRouteProvider`, `DaemonRouteContext`, `DaemonClient`, `MCPHandler`, `MCPToolSession`, `EventHub`.
 - Produces: `MCPHTTPSessionStore.create(clientName:)`, `.handler(for:)`, `.close(id:)`; `MCPRouteProvider(catalog:)` mount `POST/GET/DELETE /mcp`.
 
-- [ ] **Step 1: Viết test thất bại**
+- [x] **Step 1: Viết test thất bại**
 
 Create `Tests/OpenSimDaemonTests/MCPHTTPTests.swift`:
 
@@ -5833,7 +5858,7 @@ final class MCPHTTPTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Chạy để thấy fail**
+- [x] **Step 2: Chạy để thấy fail**
 
 Run:
 
@@ -5843,7 +5868,7 @@ swift test --filter MCPHTTPTests
 
 Expected: FAIL với `cannot find 'MCPRouteProvider' in scope`.
 
-- [ ] **Step 3: Viết MCP HTTP**
+- [x] **Step 3: Viết MCP HTTP**
 
 Modify target `OpenSimDaemonTests` trong `Package.swift` để thêm `OpenSimMCP`:
 
@@ -6099,7 +6124,7 @@ public struct MCPRouteProvider: DaemonRouteProvider {
 }
 ```
 
-- [ ] **Step 4: Chạy để thấy pass**
+- [x] **Step 4: Chạy để thấy pass**
 
 Run:
 
@@ -6109,7 +6134,7 @@ swift test --filter MCPHTTPTests
 
 Expected: PASS; `Executed 2 tests, with 0 failures`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/OpenSimMCP/Server/MCPHTTPSessionStore.swift Sources/OpenSimMCP/HTTP/MCPRouteProvider.swift Tests/OpenSimMCPTests/MCPHTTPTests.swift
@@ -6128,7 +6153,7 @@ git commit -m "feat(mcp): add http endpoint with session and sse"
 - Consumes: `OpenSimCommand` tree, `OperationCatalog.plan3()`, `.build/debug/opensim`, `DaemonStateStore`, `DaemonClient`.
 - Produces: parity test CLI/catalog; integration test daemon restart, CLI daemon switch, MCP stdio initialize/tools/list.
 
-- [ ] **Step 1: Viết test thất bại**
+- [x] **Step 1: Viết test thất bại**
 
 Modify `Package.swift` để thêm protocol/daemon vào integration tests:
 
@@ -6370,7 +6395,7 @@ Executed 3 tests, with 0 failures
 ```
 ```
 
-- [ ] **Step 2: Chạy để thấy fail**
+- [x] **Step 2: Chạy để thấy fail**
 
 Run:
 
@@ -6381,7 +6406,7 @@ swift test --filter Plan3DaemonIntegrationTests
 
 Expected: parity test FAIL nếu có catalog path thiếu CLI command; integration test skip-without-env với `Executed 3 tests, with 3 tests skipped`.
 
-- [ ] **Step 3: Sửa parity và chạy integration**
+- [x] **Step 3: Sửa parity và chạy integration**
 
 Nếu parity fail, thêm command còn thiếu vào nhóm tương ứng hoặc sửa `cliPath` cho khớp; không thêm danh sách tool thứ hai. Sau đó chạy:
 
@@ -6393,7 +6418,7 @@ OPENSIM_INTEGRATION=1 swift test --filter Plan3DaemonIntegrationTests
 
 Expected: `CatalogCLIParityTests` pass; integration `Executed 3 tests, with 0 failures`.
 
-- [ ] **Step 4: Chạy MCP contract thủ công**
+- [x] **Step 4: Chạy MCP contract thủ công**
 
 Run:
 
@@ -6412,7 +6437,7 @@ kill "$DAEMON_PID"
 
 Expected: ba dòng JSON-RPC; dòng 1 có `"protocolVersion":"2025-06-18"`; dòng 2 có tool list khớp catalog, gồm `ui_tap`/`ui_tree`/`screen_screenshot`; dòng 3 có `"code":-32602`. Không có token trong output.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Tests/OpenSimCLITests/CatalogCLIParityTests.swift Tests/IntegrationTests/Plan3DaemonIntegrationTests.swift Tests/IntegrationTests/README-Plan3.md
