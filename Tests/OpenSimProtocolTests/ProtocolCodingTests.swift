@@ -72,4 +72,54 @@ final class ProtocolCodingTests: XCTestCase {
         XCTAssertEqual(value.objectValue?["id"], .string("95B3747B-7065-447E-AB1E-53065142C3FC"))
         XCTAssertEqual(value.objectValue?["state"], .string("booted"))
     }
+
+    func testOperationRequestRoundTrip() throws {
+        let request = OperationRequest(
+            operation: "device_boot",
+            parameters: ["device": "95B3747B-7065-447E-AB1E-53065142C3FC", "wait": "true"],
+            sessionID: SessionID("session-1"),
+            leaseID: LeaseID("lease-1"),
+            dryRun: nil
+        )
+        let data = try OpenSimJSON.encoder(pretty: false).encode(request)
+        let decoded = try OpenSimJSON.decoder().decode(OperationRequest.self, from: data)
+        XCTAssertEqual(decoded, request)
+    }
+
+    func testOperationResultDataRoundTrip() throws {
+        let payload = try OpenSimJSON.encoder(pretty: false).encode(["ok": true])
+        let result = OperationResult(operation: "device_list", data: payload, auditID: "audit-1")
+        let data = try OpenSimJSON.encoder(pretty: false).encode(result)
+        let decoded = try OpenSimJSON.decoder().decode(OperationResult.self, from: data)
+        XCTAssertEqual(decoded.data, payload)
+        XCTAssertEqual(decoded.auditID, "audit-1")
+    }
+
+    func testDaemonEventRoundTrip() throws {
+        let payload = DeviceStateChangedPayload(
+            deviceID: DeviceID("95B3747B-7065-447E-AB1E-53065142C3FC"),
+            state: .booted,
+            previousState: .booting
+        )
+        let event = DaemonEvent(
+            id: "7",
+            type: .deviceStateChanged,
+            timestamp: Date(timeIntervalSince1970: 1_797_000_000),
+            data: try JSONValue.from(payload)
+        )
+        let data = try OpenSimJSON.encoder(pretty: false).encode(event)
+        let decoded = try OpenSimJSON.decoder().decode(DaemonEvent.self, from: data)
+        XCTAssertEqual(decoded, event)
+        XCTAssertEqual(decoded.type.rawValue, "device.state.changed")
+    }
+
+    func testPlan3CatalogAddsSessionAndUITools() {
+        let catalog = OperationCatalog.plan3()
+        let names = Set(catalog.mcpOperations().map(\.mcpName))
+        XCTAssertTrue(names.isSuperset(of: [
+            "session_acquire", "session_release", "ui_tap", "ui_tree", "screen_screenshot"
+        ]))
+        XCTAssertNotNil(catalog.operation(forMCP: "session_acquire"))
+        XCTAssertEqual(catalog.operation(forCLI: ["session", "release"])?.mcpName, "session_release")
+    }
 }
