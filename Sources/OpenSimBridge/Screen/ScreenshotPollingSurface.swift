@@ -15,12 +15,18 @@ public final class ScreenshotPollingSurface: DisplaySurface {
     private var pollTask: Task<Void, Never>?
     private var failures = 0
     private var isConnected = false
+    private let screenScaleProvider: (@Sendable (DeviceID) async -> CGFloat)?
 
     public var view: NSView { imageView }
 
-    public init(device: DeviceID, screens: any ScreenControlling) {
+    public init(
+        device: DeviceID,
+        screens: any ScreenControlling,
+        screenScaleProvider: (@Sendable (DeviceID) async -> CGFloat)? = nil
+    ) {
         self.device = device
         self.screens = screens
+        self.screenScaleProvider = screenScaleProvider
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.wantsLayer = true
         imageView.layer?.backgroundColor = NSColor.black.cgColor
@@ -28,6 +34,9 @@ public final class ScreenshotPollingSurface: DisplaySurface {
 
     public func connect() async throws {
         guard !isConnected else { return }
+        if let screenScaleProvider {
+            screenScale = await screenScaleProvider(device)
+        }
         isConnected = true
         do {
             try await poll()

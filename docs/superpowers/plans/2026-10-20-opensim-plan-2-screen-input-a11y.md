@@ -1766,9 +1766,11 @@ Expected: FAIL với `cannot find 'SimulatorScreenView' in scope`.
 
 Thêm target/product `OpenSimBridgeUI` deps `OpenSimCore`, `OpenSimBridge`; test target `OpenSimBridgeUITests`; thêm `OpenSimBridgeUI` vào deps `IntegrationTests`.
 
-`SimulatorScreenView` là `NSView` chứa `rotationContainer` và surface.view. `screenSize` = pixelSize / screenScale, swap khi `rotation.isSideways`. `rotation` là hướng hiển thị của view; thay đổi orientation thiết bị không thuộc Plan 2. `connect` tạo surface, gán callback, connect, add subview, phát size. `disconnect` gọi surface, remove, reset. `setRotation` cập nhật, phát size mới, `needsLayout`. `layout` aspect-fit `rotationContainer` trong bounds và áp transform xoay.
+`SimulatorScreenView` là `NSView` chứa `rotationContainer` và surface.view. `screenSize` = pixelSize / screenScale, swap khi `rotation.isSideways`. `rotation` là hướng hiển thị của view; thay đổi orientation thiết bị không thuộc Plan 2. `connect` tạo surface, gán callback, connect, add subview, phát size. `disconnect` gọi surface, remove, reset. `setRotation` cập nhật, phát size mới, `needsLayout`.
 
-`ScreenPointerMapper.aspectFitRect(content:in:)` tính tỉ lệ; `simulatorPoint` convert point vào container, chuẩn hoá theo contentSize, áp inverse rotation (90: `(y, 1-x)`, 180: `(1-x,1-y)`, 270: `(1-y,x)`), trả nil ngoài `0` đến `1`; `viewPoint` là nghịch đảo.
+`layout` giữ `rotationContainer.bounds` = kích thước gốc (base), đặt frame căn giữa bounds, rồi áp layer transform `rotation + scale` với scale lấy từ aspect-fit của kích thước hiển thị (đã swap nếu xoay). Không đặt frame container bằng aspect-fit rotated rectangle trước khi xoay (sẽ lệch geometry).
+
+`ScreenPointerMapper` nhận `bounds`, `contentSize` (base), `rotation`; `aspectFitRect(content:in:)` tính tỉ lệ; `simulatorPoint` chuẩn hoá điểm theo rect hiển thị (trục y đổi từ NSView bottom-left sang top-left), áp inverse rotation (90: `(y, 1-x)`, 180: `(1-x,1-y)`, 270: `(1-y,x)`), trả nil ngoài `0` đến `1`; `viewPoint` là nghịch đảo. Surface nhận `screenScaleProvider` async để lấy scale thật từ `screen_info` khi connect, tránh báo screenSize bằng pixel.
 
 ```swift
 @MainActor

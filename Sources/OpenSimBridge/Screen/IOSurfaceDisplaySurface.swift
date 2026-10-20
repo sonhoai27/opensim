@@ -18,9 +18,14 @@ public final class IOSurfaceDisplaySurface: DisplaySurface {
     private var framebufferSurface: IOSurface?
     private var refreshTask: Task<Void, Never>?
     private var isConnected = false
+    private let screenScaleProvider: (@Sendable (DeviceID) async -> CGFloat)?
 
-    public init(device: DeviceID) {
+    public init(
+        device: DeviceID,
+        screenScaleProvider: (@Sendable (DeviceID) async -> CGFloat)? = nil
+    ) {
         self.device = device
+        self.screenScaleProvider = screenScaleProvider
         let view = NSView(frame: .zero)
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.black.cgColor
@@ -36,6 +41,9 @@ public final class IOSurfaceDisplaySurface: DisplaySurface {
 
     public func connect() async throws {
         guard !isConnected else { return }
+        if let screenScaleProvider {
+            screenScale = await screenScaleProvider(device)
+        }
         let checker = SimulatorKitLoader.live()
         guard Self.isSupported(checker: checker) else {
             throw surfaceError("IOSurface display is unavailable in this Xcode build")

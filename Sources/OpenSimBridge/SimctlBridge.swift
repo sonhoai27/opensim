@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import OpenSimCore
 
@@ -111,12 +112,20 @@ public struct SimctlBridge: SimulatorBridge, DoctorReporting, CrashReportReading
         } else {
             accessibilityService = nil
         }
+        let screenScaleProvider: @Sendable (DeviceID) async -> CGFloat = { device in
+            let screens = try? await screenService.screens(for: device)
+            return screens?.first?.scale ?? 1
+        }
         let displaySurfaceFactory: @MainActor @Sendable (DeviceID) throws -> any DisplaySurface = { device in
             switch gate.render {
             case .simDisplayView, .ioSurface:
-                return IOSurfaceDisplaySurface(device: device)
+                return IOSurfaceDisplaySurface(device: device, screenScaleProvider: screenScaleProvider)
             case .screenshotPolling:
-                return ScreenshotPollingSurface(device: device, screens: screenService)
+                return ScreenshotPollingSurface(
+                    device: device,
+                    screens: screenService,
+                    screenScaleProvider: screenScaleProvider
+                )
             }
         }
         let doctor = DoctorService(

@@ -7,6 +7,7 @@ let package = Package(
     products: [
         .library(name: "OpenSimCore", targets: ["OpenSimCore"]),
         .library(name: "OpenSimBridge", targets: ["OpenSimBridge"]),
+        .library(name: "OpenSimBridgeUI", targets: ["OpenSimBridgeUI"]),
         .executable(name: "opensim", targets: ["OpenSimCLI"]),
     ],
     dependencies: [
@@ -15,6 +16,7 @@ let package = Package(
     targets: [
         .target(name: "OpenSimCore"),
         .target(name: "OpenSimBridge", dependencies: ["OpenSimCore"]),
+        .target(name: "OpenSimBridgeUI", dependencies: ["OpenSimCore", "OpenSimBridge"]),
         .executableTarget(
             name: "OpenSimCLI",
             dependencies: [
@@ -26,6 +28,10 @@ let package = Package(
         .testTarget(name: "OpenSimCoreTests", dependencies: ["OpenSimCore"]),
         .testTarget(name: "OpenSimBridgeTests", dependencies: ["OpenSimBridge", "OpenSimCore"]),
         .testTarget(
+            name: "OpenSimBridgeUITests",
+            dependencies: ["OpenSimBridgeUI", "OpenSimBridge", "OpenSimCore"]
+        ),
+        .testTarget(
             name: "OpenSimCLITests",
             dependencies: [
                 "OpenSimCLI",
@@ -35,7 +41,7 @@ let package = Package(
         ),
         .testTarget(
             name: "IntegrationTests",
-            dependencies: ["OpenSimCore", "OpenSimBridge"],
+            dependencies: ["OpenSimCore", "OpenSimBridge", "OpenSimBridgeUI"],
             exclude: ["README.md"]
         ),
     ],
