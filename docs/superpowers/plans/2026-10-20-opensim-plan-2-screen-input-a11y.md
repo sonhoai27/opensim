@@ -639,7 +639,7 @@ public func render(source: URL, format: ScreenshotFormat, scale: Double, quality
 }
 ```
 
-`SimctlScreenCapture.screens`: chạy `io enumerate`, parse, lấy `Device` qua protocol hẹp `ScreenDeviceReading` (extension `SimctlDeviceService`), lấy profile, trả `ScreenInfo(id: UInt32(index + 1), width, height, scale: main ? profile.scale : 1, rotation: main ? profile.orientation : 0, displayClass)`. `.screenshot` chạy `io screenshot` ra temp PNG, render, chọn đích `out` hoặc `screenshotsDirectory/shot-<uuid>.<ext>`, validate path, ghi file, trả `Screenshot(path:data:nil:format:width:height:scale:capturedAt:)`.
+`SimctlScreenCapture.screens`: chạy `io enumerate`, parse, lấy `Device` qua protocol hẹp `ScreenDeviceReading` (extension `SimctlDeviceService`), lấy profile, trả `ScreenInfo(id: UInt32(index + 1), width, height, scale: main ? profile.scale : 1, rotation: main ? profile.orientation : 0, displayClass)`. **Main display xác định theo `displayClass == 0`**, không theo thứ tự đầu tiên (iPad có thể liệt kê external display trước). `.screenshot` chạy `io screenshot` ra temp PNG, render, chọn đích `out` hoặc `screenshotsDirectory/shot-<uuid>.<ext>`, validate path, ghi file, trả `Screenshot(path:data:nil:format:width:height:scale:capturedAt:)`.
 
 Đo thật 2026-10-20: `simctl io screenshot` headless mất **~41 giây** mỗi lần (cả khi gọi trực tiếp), không phụ thuộc app foreground. `SimctlScreenService` ưu tiên `FramebufferScreenshotter` (SimDeviceScreen.screen.framebufferSurface + CIContext) khi gate render là `ioSurface`; đo được **~0,6 giây**. Simctl vẫn là fallback khi private API không khả dụng.
 
@@ -1330,7 +1330,14 @@ func testHelper() throws {
 }
 ```
 
-`XCUITestHelperRunner` kiểm tra `xcodegen` + `Fixtures/OpenSimFixture/project.yml`; `build-for-testing` vào cache `~/Library/Caches/OpenSim/xcuitest`; mỗi lần chạy copy `.xctestrun` **vào cùng thư mục `Build/Products`** (vì `__TESTROOT__` resolve theo vị trí file), inject `EnvironmentVariables` (`OPENSIM_HELPER_*`), chạy `xcodebuild test-without-building -xctestrun <copy> -destination id=<udid> -only-testing:OpenSimFixtureUITests/OpenSimFixtureUITests/testHelper` với timeout 300 giây, parse marker base64. `run` yêu cầu `bundleID`, thiếu thì `invalid_argument`.
+`XCUITestHelperRunner` kiểm tra `xcodegen` + `Fixtures/OpenSimFixture/project.yml`; `build-for-testing` vào cache `~/Library/Caches/OpenSim/xcuitest`. Runner là actor giữ **một persistent session cho mỗi cặp device + bundle ID**:
+
+- Fixture có thêm `testHelperServer`: đọc `OPENSIM_HELPER_SERVER_PORT`/`OPENSIM_HELPER_BUNDLE_ID`, kết nối TCP `127.0.0.1`, gửi `{"ready":true}`, nhận JSON line action, trả JSON response, thoát khi nhận `quit`; `executionTimeAllowance = 3600`.
+- Runner copy `.xctestrun` vào cùng thư mục `Build/Products` (vì `__TESTROOT__` resolve theo vị trí file), inject env server, mở listener loopback, chạy `xcodebuild test-without-building ... testHelperServer` một lần, chờ kết nối và handshake, rồi gửi action qua socket.
+- Startup ~30–50 giây; mỗi action sau đó nhanh (tree/tap vài trăm ms đến vài giây). Đo thật: startup + tree + tap + tree = **46–53 giây**, counter đổi từ 0 → 1 trong cùng session.
+- Session kết thúc khi CLI process thoát hoặc gọi `shutdown`; lúc đó xcodebuild shutdown simulator. Vì vậy state chỉ được giữ trong một process; command CLI riêng lẻ cần daemon Plan 3, còn batch `ui act` và integration test dùng một session.
+
+`XCUITestHelperAction`/`Response` vẫn là contract; runner `run` yêu cầu `bundleID`, thiếu thì `invalid_argument`. Fixture vẫn giữ `testHelper` một lần chạy (env) để debug.
 
 Cache build dùng stamp mtime của fixture để tránh `build-for-testing` lại mỗi lần. Lần chạy thật đầu tiên mất khoảng 130 giây (app build + test build + 2 helper invocation); các lần sau nhanh hơn nhưng mỗi action vẫn là một lần xcodebuild.
 
@@ -2007,7 +2014,7 @@ git commit -m "feat(cli): add ui command group"
 
 ### Task 15: Integration test fixture, CLI smoke và chốt gate
 
-> **BLOCKER 2026-10-20:** `xcodebuild test-without-building` shutdown simulator sau mỗi lần helper chạy; mỗi action mất 75–147 giây và app state bị reset. Không chạy Task 15 cho tới khi input path được sửa. Bằng chứng và hướng xử lý: `docs/superpowers/spikes/2026-10-20-plan2-input-blocker.md`.
+> **Status 2026-10-20:** persistent helper server đã thay one-shot. Integration flow `testFixtureInputAccessibilityAndScreenshot` **PASS** (screenshot, tree/find, tap → counter, type, long-press, swipe/pan, `ui act`); `testFixtureRecording` **skip** vì `simctl recordVideo` headless không dừng sau SIGINT (treo process). CLI từng lệnh là một session riêng nên state không qua lệnh; dùng `ui act` cho batch, daemon Plan 3 cho state dài hạn. Bằng chứng: `docs/superpowers/spikes/2026-10-20-plan2-input-blocker.md`.
 
 **Files:**
 - Create: `Tests/IntegrationTests/Support/FixtureInstaller.swift`, `Tests/IntegrationTests/Plan2FixtureIntegrationTests.swift`
@@ -2072,6 +2079,7 @@ Expected: PASS-with-skip vì `OPENSIM_INTEGRATION` chưa đặt.
 ```bash
 swift build
 OPENSIM_INTEGRATION=1 swift test --filter Plan2FixtureIntegrationTests
+export OPENSIM_XCUITEST_BUNDLE_ID=dev.opensim.fixture
 BIN="$(swift build --show-bin-path)/opensim"
 APP="$(Fixtures/OpenSimFixture/build.sh | tail -1)"
 xcrun simctl install booted "$APP"
@@ -2080,17 +2088,13 @@ xcrun simctl launch booted dev.opensim.fixture
 "$BIN" ui screenshot --device "iPhone Air" --out /tmp/opensim-ui.png --json
 "$BIN" ui tree --device "iPhone Air" --json
 "$BIN" ui find 'id=fixture-primary-button' --device "iPhone Air" --json
-"$BIN" ui tap --on 'id=fixture-primary-button' --device "iPhone Air" --json
-"$BIN" ui type "hello@example.com" --device "iPhone Air" --json
-"$BIN" ui wait --on 'id=fixture-counter-label' --timeout-ms 3000 --device "iPhone Air" --json
-"$BIN" ui act --steps '[{"type":"tap","on":{"identifier":"fixture-primary-button"}},{"type":"wait","ms":200}]' --device "iPhone Air" --json
-START_JSON="$("$BIN" ui record start --device "iPhone Air" --out /tmp/opensim-ui.mov --json)"
-RECORDING_ID="$(printf '%s' "$START_JSON" | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
-sleep 1
-"$BIN" ui record stop "$RECORDING_ID" --device "iPhone Air" --json
+"$BIN" ui act --steps '[{"type":"tap","on":{"identifier":"fixture-primary-button"}},{"type":"wait","ms":200},{"type":"screenshot","format":"png"}]' --device "iPhone Air" --json
+# Mỗi lệnh CLI là một session riêng: tap/type/wait rời rạc không giữ state.
+# Dùng ui act cho chuỗi stateful; daemon Plan 3 giữ session giữa các lệnh.
+# record start/stop bị treo headless (simctl recordVideo không dừng) — Task 15 skip.
 ```
 
-Expected: envelope `schemaVersion = 1`; `ui info` có screen; screenshot file tồn tại; tree có identifier; find một element; tap đổi counter; type đổi value; wait `matched = true`; act đủ step; record stop file size > 0. Khi service nil, exit `5`, stderr `error[capability_unavailable]`.
+Expected: envelope `schemaVersion = 1`; `ui info` có screen; screenshot file tồn tại; tree có identifier; find một element; `ui act` đủ step và có screenshot. `testFixtureInputAccessibilityAndScreenshot` PASS; recording test skip kèm lý do. Khi service nil, exit `5`, stderr `error[capability_unavailable]`.
 
 - [ ] **Step 4: Chốt gate report**
 

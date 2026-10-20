@@ -132,6 +132,14 @@ final class Plan2FixtureIntegrationTests: XCTestCase {
         XCTAssertTrue(act.steps.allSatisfy(\.ok))
         XCTAssertNotNil(act.steps.last?.screenshot)
 
+    }
+
+    func testFixtureRecording() async throws {
+        setenv("OPENSIM_XCUITEST_BUNDLE_ID", FixtureInstaller.bundleID, 1)
+        let bridge = try SimctlBridge.live(timeout: .seconds(180))
+        let device = try await bootedOrBootIOSDevice(bridge)
+        _ = try await FixtureInstaller.installAndLaunch(bridge: bridge.apps, device: device.id)
+        try await Task.sleep(for: .seconds(2))
         try await verifyRecording(bridge: bridge, device: device.id)
     }
 

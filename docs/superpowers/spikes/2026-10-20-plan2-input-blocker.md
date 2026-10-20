@@ -84,6 +84,24 @@ chạy dài hạn, test helper mở TCP server trên localhost, CLI gửi action
 không bị shutdown giữa các action, app state được giữ; đổi lại độ phức tạp nằm ở vòng đời helper
 (timeout/cleanup) chứ không phải ABI private.
 
+## Persistent helper server (đã dựng — 2026-10-20)
+
+Đã thay one-shot `xcodebuild` bằng server dài hạn:
+
+- Fixture `testHelperServer` kết nối TCP `127.0.0.1`, handshake `{"ready":true}`, nhận JSON line
+  action, trả JSON response; `executionTimeAllowance = 3600`.
+- `XCUITestHelperRunner` giữ một session cho mỗi `(device, bundleID)`, build `.xctestrun` một lần,
+  mở xcodebuild một lần, giao tiếp qua socket; session kết thúc khi CLI thoát hoặc `shutdown`.
+- Đo thật: startup + tree + tap + tree = **46–53 giây**; `tap` đổi counter `0 → 1` trong cùng
+  session. Integration flow `testFixtureInputAccessibilityAndScreenshot` **PASS** (screenshot,
+  tree/find, tap, type, long-press, swipe/pan, `ui act`).
+
+Giới hạn còn lại:
+- Mỗi lệnh CLI là một process/session riêng, nên state không qua được lệnh; `ui act` giữ state
+  trong một batch, daemon Plan 3 sẽ giữ session giữa các lệnh.
+- `simctl recordVideo` headless không dừng sau SIGINT (quá 10 giây, process còn sống); recording
+  integration test skip. Cần framebuffer/AVAssetWriter hoặc display host (Plan 5/6).
+
 ## Hướng khả thi
 
 ### A. DeviceKit/CoreDevice HID (khuyến nghị spike)
@@ -104,11 +122,9 @@ Device Hub:
 `DigitizerReport`, rồi xác minh tap làm đổi counter ngay trong một session (không reboot).
 Nếu thành công, thay `XCUITestInputService`/`XCUITestAccessibilityService` làm primary.
 
-### B. Persistent XCUITest helper server
+### B. Persistent XCUITest helper server (đã chọn và đã dựng)
 
-Giữ một `xcodebuild test-without-building` chạy dài hạn; test helper mở TCP server trên localhost
-và nhận lệnh từ runner. Simulator không shutdown giữa các lệnh, state giữ nguyên, latency thấp.
-Nhược điểm: phức tạp, phụ thuộc test runner sống lâu, cần cơ chế cleanup/timeout.
+Đã triển khai; xem mục "Persistent helper server" ở trên.
 
 ### C. macOS Accessibility (AXUIElement)
 

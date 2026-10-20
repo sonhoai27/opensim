@@ -32,6 +32,10 @@ PLAN2_LOOKUP=95B3747B-7065-447E-AB1E-53065142C3FC
 
 `helperConfigured: false` trong probe vì XCUITest helper chưa được cấu hình ở Task 6.
 
+Sau khi helper được cấu hình (Task 10), `SimctlBridge.live` truyền `helperConfigured: true`; khi đó
+`input`/`accessibility` chuyển sang `xcuiTest` và integration Task 15 xác nhận tree/tap/type hoạt động
+qua persistent session.
+
 ## Diễn giải
 
 | Mục | Kết quả | Bằng chứng |
