@@ -3494,7 +3494,9 @@ git commit -m "feat(daemon): add sse frames and event stream"
 
 **Interfaces:**
 - Consumes: `OpenSimPaths`, `ProcessLock`, `SimctlBridge.live`, `OperationCatalog.plan3()`, `DaemonServices`, `DaemonServer`, `DaemonStateStore`, `TokenGenerator`, `PortAllocator`.
-- Produces: `DaemonLogger.makeLogger(paths:maxBytes:)`; `DaemonRunConfiguration(paths:port:routeProviders:)`; `DaemonRunner.run(configuration:)` chạy đến SIGINT/SIGTERM, ghi/xoá state, giữ lock.
+- Produces: `DaemonLogger.makeLogger(paths:maxBytes:)` và `makeLogger(fileURL:maxBytes:maxFiles:)`; `DaemonRunConfiguration(paths:port:routeProviders:)`; `DaemonRunner.run(configuration:)` chạy đến SIGINT/SIGTERM, ghi/xoá state, giữ lock.
+
+> **Sửa khi thi công:** `OpenSimPaths.logDirectory` luôn trỏ `~/Library/Logs/OpenSim` (đúng spec dòng 572), KHÔNG phụ thuộc `baseDirectory`. Test cũ dùng `OpenSimPaths(baseDirectory: /tmp...)` nên ghi đè log thật của máy — đã đổi sang `makeLogger(fileURL:)` trỏ thư mục tạm.
 
 - [ ] **Step 1: Viết test thất bại**
 
@@ -3504,23 +3506,43 @@ Create `Tests/OpenSimDaemonTests/DaemonLoggerTests.swift`:
 import Logging
 import XCTest
 @testable import OpenSimDaemon
-@testable import OpenSimCore
 
 final class DaemonLoggerTests: XCTestCase {
-    func testFileLoggerWritesAndRotates() throws {
+    private func contents(of url: URL) -> String {
+        (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+    }
+
+    func testFileLoggerWritesLines() throws {
         let root = URL(fileURLWithPath: "/tmp", isDirectory: true)
             .appendingPathComponent("opensim-log-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        let paths = OpenSimPaths(baseDirectory: root)
-        let logger = DaemonLogger.makeLogger(paths: paths, maxBytes: 120)
-        for index in 0..<10 {
-            logger.info("line \(index) with enough text to rotate the file")
+        let file = root.appendingPathComponent("daemon.log")
+        let logger = DaemonLogger.makeLogger(fileURL: file, maxBytes: 10 * 1_024 * 1_024)
+        logger.info("hello daemon")
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+        XCTAssertTrue(contents(of: file).contains("hello daemon"))
+        let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
+        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+        let directoryAttributes = try FileManager.default.attributesOfItem(atPath: root.path)
+        XCTAssertEqual((directoryAttributes[.posixPermissions] as? NSNumber)?.intValue, 0o700)
+    }
+
+    func testFileLoggerRotatesAtMaxBytesAndCapsArchives() throws {
+        let root = URL(fileURLWithPath: "/tmp", isDirectory: true)
+            .appendingPathComponent("opensim-rotate-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("daemon.log")
+        let logger = DaemonLogger.makeLogger(fileURL: file, maxBytes: 200, maxFiles: 3)
+        for index in 0..<20 {
+            logger.info("line \(index) with enough text to force rotation")
         }
-        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.daemonLogFile.path))
-        let files = try FileManager.default.contentsOfDirectory(atPath: paths.logDirectory.path)
+
+        let files = try FileManager.default.contentsOfDirectory(atPath: root.path)
         XCTAssertTrue(files.contains("daemon.log"))
-        XCTAssertTrue(files.contains { $0.hasPrefix("daemon.log.") })
+        XCTAssertEqual(files.filter { $0.hasPrefix("daemon.log.") }.count, 3)
+        XCTAssertTrue(contents(of: file).contains("line 19"))
+        XCTAssertFalse(contents(of: file).contains("line 0 "))
     }
 }
 ```
