@@ -11,9 +11,10 @@ final class CatalogTests: XCTestCase {
 
     func testMCPExposureMatchesSpecSubset() {
         let catalog = OperationCatalog.plan1()
-        XCTAssertEqual(catalog.mcpOperations().count, 22)
+        XCTAssertEqual(catalog.mcpOperations().count, 23)
         let names = Set(catalog.mcpOperations().map(\.mcpName))
         XCTAssertTrue(names.contains("device_list"))
+        XCTAssertTrue(names.contains("runtime_download"))
         XCTAssertTrue(names.contains("log_tail"))
         XCTAssertTrue(names.contains("doctor_report"))
         XCTAssertFalse(names.contains("runtime_verify"))

@@ -100,6 +100,15 @@ public struct BridgeOperationExecutor: Sendable {
             let runtime = try await bridge.runtimes.installRuntime(at: path)
             return try encode(runtime)
 
+        case "runtime_download":
+            let platformRaw = try params.string("platform")
+            guard let platform = Platform(rawValue: platformRaw) else {
+                throw OpenSimError.invalidArgument("platform must be iOS, watchOS, tvOS, or visionOS")
+            }
+            let version = try params.string("version")
+            let runtime = try await bridge.runtimes.downloadRuntime(platform: platform, version: version)
+            return try encode(runtime)
+
         case "runtime_delete":
             let id = try IdentifierValidation.validateRuntimeIdentifier(try params.string("identifier"))
             try await bridge.runtimes.deleteRuntime(id)

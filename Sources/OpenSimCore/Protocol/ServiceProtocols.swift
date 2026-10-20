@@ -15,6 +15,7 @@ public protocol DeviceControlling: Sendable {
 
 public protocol RuntimeControlling: Sendable {
     func listRuntimes() async throws -> [Runtime]
+    func downloadRuntime(platform: Platform, version: String) async throws -> Runtime
     func installRuntime(at path: String) async throws -> Runtime
     func deleteRuntime(_ id: RuntimeID) async throws
     func verifyRuntime(_ id: RuntimeID) async throws

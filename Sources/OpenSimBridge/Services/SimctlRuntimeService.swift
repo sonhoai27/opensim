@@ -4,10 +4,16 @@ import OpenSimCore
 public struct SimctlRuntimeService: RuntimeControlling {
     private let executor: any SimctlExecuting
     private let timeout: Duration
+    private let downloader: any RuntimeDownloading
 
-    public init(executor: any SimctlExecuting, timeout: Duration) {
+    public init(
+        executor: any SimctlExecuting,
+        timeout: Duration,
+        downloader: any RuntimeDownloading = XcodebuildRuntimeDownloader()
+    ) {
         self.executor = executor
         self.timeout = timeout
+        self.downloader = downloader
     }
 
     public func listRuntimes() async throws -> [Runtime] {
@@ -24,7 +30,8 @@ public struct SimctlRuntimeService: RuntimeControlling {
                 version: entry.version,
                 build: entry.buildversion ?? "",
                 isAvailable: entry.isAvailable ?? true,
-                path: entry.bundlePath ?? entry.runtimeRoot
+                path: entry.bundlePath ?? entry.runtimeRoot,
+                source: .system
             )
         }
         return runtimes.sorted {
@@ -33,6 +40,20 @@ public struct SimctlRuntimeService: RuntimeControlling {
             }
             return $0.platform.rawValue < $1.platform.rawValue
         }
+    }
+
+    public func downloadRuntime(platform: Platform, version: String) async throws -> Runtime {
+        try await downloader.download(platform: platform, version: version)
+        let runtimes = try await listRuntimes()
+        guard let runtime = runtimes.first(where: { $0.platform == platform && $0.version == version }) else {
+            throw OpenSimError(
+                code: .runtimeVersionUnavailable,
+                message: "Runtime \(platform.rawValue) \(version) was not found after download",
+                details: ["platform": platform.rawValue, "version": version],
+                recovery: "Run `opensim runtime list` and verify the installed version"
+            )
+        }
+        return runtime
     }
 
     public func installRuntime(at path: String) async throws -> Runtime {

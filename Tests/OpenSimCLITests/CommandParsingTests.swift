@@ -1,6 +1,7 @@
 import ArgumentParser
 import XCTest
 @testable import OpenSimCLI
+@testable import OpenSimCore
 
 final class CommandParsingTests: XCTestCase {
     func testParsesDeviceListAtLeaf() throws {
@@ -55,5 +56,22 @@ final class CommandParsingTests: XCTestCase {
     func testRootHasFiveGroups() {
         let names = OpenSimCommand.configuration.subcommands.map { $0.configuration.commandName }
         XCTAssertEqual(Set(names), Set(["device", "runtime", "app", "log", "doctor"]))
+    }
+
+    func testInvalidTimeoutIsRejectedByRuntimeValidation() {
+        var globals = GlobalOptions()
+        globals.timeout = 0
+        XCTAssertThrowsError(try globals.validated()) { error in
+            XCTAssertEqual((error as? OpenSimError)?.code, "invalid_argument")
+        }
+    }
+
+    func testParsesRuntimeDownload() throws {
+        let command = try OpenSimCommand.parseAsRoot([
+            "runtime", "download", "--platform", "iOS", "--version", "26.4",
+        ])
+        let download = try XCTUnwrap(command as? RuntimeDownloadCommand)
+        XCTAssertEqual(download.platform, "iOS")
+        XCTAssertEqual(download.version, "26.4")
     }
 }

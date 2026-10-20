@@ -16,7 +16,7 @@ public struct GlobalOptions: ParsableArguments {
 
     public init() {}
 
-    public func validate() throws {
+    public func validated() throws {
         guard timeout > 0 && timeout <= 3_600 else {
             throw OpenSimError.invalidArgument(
                 "timeout must be between 1 and 3600 seconds"

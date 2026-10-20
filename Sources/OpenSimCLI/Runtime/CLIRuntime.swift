@@ -5,7 +5,7 @@ import OpenSimCore
 
 public enum CLIRuntime {
     public static func makeBackend(_ globals: GlobalOptions) throws -> any CommandBackend {
-        try globals.validate()
+        try globals.validated()
         let bridge = try SimctlBridge.live(timeout: .seconds(globals.timeout))
         let executor = BridgeOperationExecutor(
             bridge: bridge,

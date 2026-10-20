@@ -141,6 +141,18 @@ public enum Plan1Operations {
             parameters: [path]
         ),
         Operation(
+            cliPath: ["runtime", "download"],
+            mcpName: "runtime_download",
+            summary: "Download and install a simulator runtime version",
+            requiresControlLease: false,
+            destructive: false,
+            readOnly: false,
+            parameters: [
+                parameter("platform", "string"),
+                parameter("version", "string"),
+            ]
+        ),
+        Operation(
             cliPath: ["runtime", "delete"],
             mcpName: "runtime_delete",
             summary: "Delete an installed simulator runtime",

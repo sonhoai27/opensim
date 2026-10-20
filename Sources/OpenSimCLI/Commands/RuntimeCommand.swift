@@ -8,6 +8,7 @@ public struct RuntimeCommand: AsyncParsableCommand {
         abstract: "Manage simulator runtimes",
         subcommands: [
             RuntimeListCommand.self,
+            RuntimeDownloadCommand.self,
             RuntimeInstallCommand.self,
             RuntimeDeleteCommand.self,
             RuntimeVerifyCommand.self,
@@ -61,6 +62,27 @@ public struct RuntimeListCommand: AsyncParsableCommand {
             )
         }) { backend in
             try await backend.execute("runtime_list", parameters: parameters, as: [Runtime].self)
+        }
+    }
+}
+
+public struct RuntimeDownloadCommand: AsyncParsableCommand {
+    public static let configuration = CommandConfiguration(commandName: "download", abstract: "Download a runtime version")
+
+    @OptionGroup public var globals: GlobalOptions
+
+    @Option(name: .long, help: "Platform: iOS, watchOS, tvOS, or visionOS")
+    public var platform: String
+
+    @Option(name: .long, help: "Runtime version, for example 26.4")
+    public var version: String
+
+    public init() {}
+
+    public func run() async throws {
+        let parameters = ["platform": platform, "version": version]
+        _ = try await CLIRuntime.run(globals: globals, table: runtimeTable) { backend in
+            try await backend.execute("runtime_download", parameters: parameters, as: Runtime.self)
         }
     }
 }
