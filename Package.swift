@@ -71,6 +71,7 @@ let package = Package(
                 "OpenSimBridge",
                 "OpenSimProtocol",
                 "OpenSimCore",
+                "OpenSimMCP",
                 .product(name: "Logging", package: "swift-log"),
             ]
         ),

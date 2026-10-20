@@ -2,6 +2,7 @@ import ArgumentParser
 import Foundation
 import OpenSimCore
 import OpenSimDaemon
+import OpenSimMCP
 import OpenSimProtocol
 
 public struct DaemonStatusInfo: Codable, Sendable, Equatable {
@@ -238,6 +239,9 @@ public struct DaemonRunCommand: AsyncParsableCommand {
     public init() {}
 
     public func run() async throws {
-        try await DaemonRunner.run(configuration: DaemonRunConfiguration(paths: OpenSimPaths()))
+        try await DaemonRunner.run(configuration: DaemonRunConfiguration(
+            paths: OpenSimPaths(),
+            routeProviders: [MCPRouteProvider(catalog: OperationCatalog.plan3())]
+        ))
     }
 }
