@@ -134,7 +134,7 @@ final class PreviewController: NSObject, NSApplicationDelegate {
             statusLabel?.stringValue = "\(device.name) · \(Int(screen.screenSize.width))×\(Int(screen.screenSize.height))"
             resizeWindow(for: screen.screenSize)
             if autoClick {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
                     self?.performSelfClick()
                 }
             }
