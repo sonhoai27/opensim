@@ -60,10 +60,29 @@ Gán raw pointer vào ivar `delegate` (offset 544) chạy được, nhưng view 
 `isEnabled=false`; bật `isEnabled=true` bằng raw memory thì crash trong `SimDigitizerInputView`
 khi dispatch mouse event — delegate/existential chưa đúng ABI.
 
-Kết luận: đường HID private là đúng hướng và không cần quyền macOS Accessibility, nhưng cần một
-harness Swift ABI riêng (gọi method/getter/setter theo đúng Swift calling convention, tốt nhất là
-một helper Swift nhỏ được compile với interface của SimulatorKit) trước khi có thể dùng làm input
-service. Đây là spike độc lập, không nên tiếp tục thử ABI trong process probe.
+### Harness ABI (đã thử)
+
+Đã dựng trampoline arm64 đặt `self` vào `x20`, args bắt đầu `x0` (đúng Swift method convention),
+và kiểm chứng bằng một dylib Swift tự tạo: method, property getter/setter, existential property
+đều trả đúng.
+
+Với SimulatorKit:
+- `SimDigitizerInputView.delegate` setter/getter (`...vsTj`/`...vgTj`) là **resilient dispatch thunk**:
+  disassembly dùng `autda x20`, đọc method descriptor tại `x20 + 0x218` rồi `braa`.
+- Gọi thunk với `x20 = instance` (convention thường): getter trả `nil`, setter không có tác dụng.
+- Gọi với `x20 = class metadata`: **SIGBUS** (giá trị `x20 + 0x218` không phải method descriptor hợp lệ).
+
+Kết luận: đường HID private đúng hướng và không cần quyền macOS Accessibility, nhưng các accessor
+Swift của SimulatorKit cần **reproduce resilient method dispatch** (method descriptor/metadata cache),
+không chỉ SwiftCC thường. Đây là spike sâu hơn (reverse-engineering ABI), không nên tiếp tục trong
+process probe.
+
+### Khuyến nghị chuyển hướng
+
+Dùng **persistent XCUITest helper server** cho input/a11y: giữ một `xcodebuild test-without-building`
+chạy dài hạn, test helper mở TCP server trên localhost, CLI gửi action và nhận kết quả. Simulator
+không bị shutdown giữa các action, app state được giữ; đổi lại độ phức tạp nằm ở vòng đời helper
+(timeout/cleanup) chứ không phải ABI private.
 
 ## Hướng khả thi
 
