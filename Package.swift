@@ -94,8 +94,14 @@ let package = Package(
         ),
         .testTarget(
             name: "IntegrationTests",
-            dependencies: ["OpenSimCore", "OpenSimBridge", "OpenSimBridgeUI"],
-            exclude: ["README.md"]
+            dependencies: [
+                "OpenSimCore",
+                "OpenSimBridge",
+                "OpenSimBridgeUI",
+                "OpenSimProtocol",
+                "OpenSimDaemon",
+            ],
+            exclude: ["README.md", "README-Plan3.md"]
         ),
     ],
     swiftLanguageModes: [.v6]
