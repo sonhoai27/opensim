@@ -14,7 +14,7 @@ public struct DoctorCommand: AsyncParsableCommand {
 
     public func run() async throws {
         _ = try await CLIRuntime.run(
-            globals: globals,
+            globals: globals.directCopy(),
             table: { report in doctorTable(report) },
             exitCode: { report in
                 guard let xcode = report.xcode else {

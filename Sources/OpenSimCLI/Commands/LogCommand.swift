@@ -79,7 +79,7 @@ public struct LogStreamCommand: AsyncParsableCommand {
             throw OpenSimError.invalidArgument("interval must be between 100 and 60000 milliseconds")
         }
         try globals.validated()
-        let backend = try CLIRuntime.makeBackend(globals)
+        let backend = try await CLIRuntime.makeBackend(globals)
         let output = OutputRenderer(json: globals.json)
         let deadline = Date().addingTimeInterval(TimeInterval(globals.timeout))
         var cursor: String?

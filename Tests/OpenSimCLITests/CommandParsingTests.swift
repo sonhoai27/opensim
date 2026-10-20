@@ -53,9 +53,36 @@ final class CommandParsingTests: XCTestCase {
         XCTAssertEqual(tail.cursor, "abc")
     }
 
-    func testRootHasFiveGroups() {
+    func testRootHasAllCommandGroups() {
         let names = OpenSimCommand.configuration.subcommands.map { $0.configuration.commandName }
-        XCTAssertEqual(Set(names), Set(["device", "runtime", "app", "log", "doctor"]))
+        XCTAssertEqual(
+            Set(names),
+            Set(["device", "runtime", "app", "ui", "log", "doctor", "daemon", "session"])
+        )
+    }
+
+    func testParsesDirectAndSessionOptions() throws {
+        let command = try OpenSimCommand.parseAsRoot([
+            "device", "list", "--direct", "--session", "session-1",
+        ])
+        let list = try XCTUnwrap(command as? DeviceListCommand)
+        XCTAssertTrue(list.globals.direct)
+        XCTAssertEqual(list.globals.session, "session-1")
+    }
+
+    func testParsesDaemonStatus() throws {
+        let command = try OpenSimCommand.parseAsRoot(["daemon", "status"])
+        XCTAssertNotNil(command as? DaemonStatusCommand)
+    }
+
+    func testParsesSessionAcquireModeAndTTL() throws {
+        let command = try OpenSimCommand.parseAsRoot([
+            "session", "acquire", "--device", "UDID-1", "--mode", "observe", "--ttl", "60",
+        ])
+        let acquire = try XCTUnwrap(command as? SessionAcquireCommand)
+        XCTAssertEqual(acquire.mode, "observe")
+        XCTAssertEqual(acquire.ttl, 60)
+        XCTAssertEqual(acquire.globals.parameters(["mode": "observe", "ttlSeconds": "60"])["device"], "UDID-1")
     }
 
     func testInvalidTimeoutIsRejectedByRuntimeValidation() {

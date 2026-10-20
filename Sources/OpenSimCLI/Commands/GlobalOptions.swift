@@ -14,7 +14,19 @@ public struct GlobalOptions: ParsableArguments {
     @Flag(name: .long, help: "Confirm destructive operations")
     public var yes: Bool = false
 
+    @Flag(name: .long, help: "Bypass the daemon and use the bridge directly")
+    public var direct: Bool = false
+
+    @Option(name: .long, help: "Reuse an existing daemon session")
+    public var session: String?
+
     public init() {}
+
+    public func directCopy() -> GlobalOptions {
+        var copy = self
+        copy.direct = true
+        return copy
+    }
 
     public func validated() throws {
         guard timeout > 0 && timeout <= 3_600 else {

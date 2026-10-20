@@ -44,6 +44,8 @@ let package = Package(
             dependencies: [
                 "OpenSimCore",
                 "OpenSimBridge",
+                "OpenSimProtocol",
+                "OpenSimDaemon",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ]
         ),

@@ -2,16 +2,31 @@ import ArgumentParser
 import Foundation
 import OpenSimBridge
 import OpenSimCore
+import OpenSimDaemon
+import OpenSimProtocol
 
 public enum CLIRuntime {
-    public static func makeBackend(_ globals: GlobalOptions) throws -> any CommandBackend {
+    public static func makeBackend(_ globals: GlobalOptions) async throws -> any CommandBackend {
+        try globals.validated()
+        if globals.direct {
+            return try makeDirectBackend(globals)
+        }
+        let client = try await DaemonLauncher(paths: OpenSimPaths()).ensureRunning()
+        return DaemonCommandBackend(
+            client: client,
+            catalog: OperationCatalog.plan3(),
+            providedSession: globals.session.map { SessionID($0) }
+        )
+    }
+
+    public static func makeDirectBackend(_ globals: GlobalOptions) throws -> any CommandBackend {
         try globals.validated()
         let bridge = try SimctlBridge.live(timeout: .seconds(globals.timeout))
         let executor = BridgeOperationExecutor(
             bridge: bridge,
             crashReports: bridge,
             doctor: bridge,
-            catalog: .plan2(),
+            catalog: .plan3(),
             automation: UIAutomationService(
                 screen: bridge.screen,
                 input: bridge.input,
@@ -30,7 +45,7 @@ public enum CLIRuntime {
         let renderer = OutputRenderer(json: globals.json)
         let started = Date()
         do {
-            let backend = try makeBackend(globals)
+            let backend = try await makeBackend(globals)
             let value = try await body(backend)
             let duration = Int(Date().timeIntervalSince(started) * 1_000)
             try renderer.success(value, table: table(value), durationMs: duration)
