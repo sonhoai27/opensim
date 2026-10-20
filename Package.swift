@@ -33,6 +33,11 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ]
         ),
+        .testTarget(
+            name: "IntegrationTests",
+            dependencies: ["OpenSimCore", "OpenSimBridge"],
+            exclude: ["README.md"]
+        ),
     ],
     swiftLanguageModes: [.v6]
 )

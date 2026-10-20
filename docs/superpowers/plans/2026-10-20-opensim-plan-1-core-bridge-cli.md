@@ -7415,11 +7415,11 @@ Expected: bảng hai cột với header `FIELD` và `VALUE`; dòng `udid` chứa
 Exit code check:
 
 ```bash
-"$BIN" device delete --device "OpenSim Missing Device"
+"$BIN" device delete --device "OpenSim Missing Device" --yes
 echo "exit=$?"
 ```
 
-Expected: exit code `3`; stderr có `error[device_not_found]`.
+Expected: exit code `3`; stderr có `error[device_not_found]`. Không có `--yes` trả `confirmation_required` (exit 7) trước khi resolve device; đây là chủ ý an toàn.
 
 ```bash
 "$BIN" device list --device "iPhone Air" --timeout 0
