@@ -7,7 +7,9 @@ public struct OpenSimCommand: AsyncParsableCommand {
         commandName: "opensim",
         abstract: "Control Apple simulators from the command line",
         version: OpenSimVersion.version,
-        subcommands: []
+        subcommands: [
+            DeviceCommand.self,
+        ]
     )
 
     public init() {}
