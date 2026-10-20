@@ -42,6 +42,29 @@ Thử `-parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinati
 Đã thay primary bằng framebuffer (`SimDeviceScreen.screen.framebufferSurface` + CIContext):
 **~0,6 giây**, ảnh 1260×2736. Simctl vẫn là fallback.
 
+## Spike HID bổ sung (cùng ngày)
+
+Đã thử đường private trong SimulatorKit (không dùng XCUITest):
+
+- `SimDeviceScreen` có các Swift getter thật: `unmaskedSurface`, `maskedSurface`, `pixelSize`,
+  `scale`, `buttonTarget`, `screen`.
+- `SimDigitizerInputView` là NSView nhận mouse events; `SimDeviceLegacyHIDClient` là
+  `SimDigitizerInputViewDelegate` và là nơi build/gửi Indigo HID message.
+- `SimDeviceLegacyHIDClient` là ObjC-visible; `sendWithMessage:freeWhenDone:completionQueue:completion:`
+  hoạt động. `SimDigitizerInputView.delegate` là Swift protocol **class-constrained** (không phải @objc),
+  nên phải gán qua Swift ABI.
+
+Kết quả: gọi trực tiếp Swift getter/setter (`buttonTarget`, `delegate`) từ process ngoài bằng
+`@convention(thin)` bị sai ABI (crash `-[Swift.__StringStorage deviceType]`, hoặc crash khi setter).
+Gán raw pointer vào ivar `delegate` (offset 544) chạy được, nhưng view không gọi delegate khi
+`isEnabled=false`; bật `isEnabled=true` bằng raw memory thì crash trong `SimDigitizerInputView`
+khi dispatch mouse event — delegate/existential chưa đúng ABI.
+
+Kết luận: đường HID private là đúng hướng và không cần quyền macOS Accessibility, nhưng cần một
+harness Swift ABI riêng (gọi method/getter/setter theo đúng Swift calling convention, tốt nhất là
+một helper Swift nhỏ được compile với interface của SimulatorKit) trước khi có thể dùng làm input
+service. Đây là spike độc lập, không nên tiếp tục thử ABI trong process probe.
+
 ## Hướng khả thi
 
 ### A. DeviceKit/CoreDevice HID (khuyến nghị spike)
