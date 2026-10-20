@@ -7,7 +7,10 @@ public enum PathPolicy {
         let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
             .resolvingSymlinksInPath()
             .path
-        return [home, "/tmp", "/private/tmp", "/Applications", "/Library/Developer"]
+        let temporary = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .resolvingSymlinksInPath()
+            .path
+        return [home, "/tmp", "/private/tmp", temporary, "/Applications", "/Library/Developer"]
     }
 
     public static func validateDeveloperDir(_ path: String) throws -> String {
@@ -120,9 +123,15 @@ public enum PathPolicy {
     }
 
     public static func isContained(_ path: String, in roots: [String]) -> Bool {
-        let candidate = URL(fileURLWithPath: path).standardizedFileURL.path
+        let candidate = URL(fileURLWithPath: path)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+            .path
         return roots.contains { root in
-            let normalizedRoot = URL(fileURLWithPath: root).standardizedFileURL.path
+            let normalizedRoot = URL(fileURLWithPath: root)
+                .resolvingSymlinksInPath()
+                .standardizedFileURL
+                .path
             return candidate == normalizedRoot || candidate.hasPrefix(normalizedRoot + "/")
         }
     }

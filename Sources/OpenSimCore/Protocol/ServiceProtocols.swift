@@ -42,6 +42,11 @@ public protocol ScreenControlling: Sendable {
     func stopRecording(_ id: RecordingID) async throws -> String
 }
 
+public protocol RecordingControlling: Sendable {
+    func recordingInfo(_ id: RecordingID) async throws -> RecordingInfo
+    func stopRecordingResult(_ id: RecordingID) async throws -> RecordingStopResult
+}
+
 public protocol InputControlling: Sendable {
     func tap(on device: DeviceID, at point: Point, settle: Bool) async throws
     func swipe(on device: DeviceID, from: Point, to: Point, durationMs: Int) async throws
