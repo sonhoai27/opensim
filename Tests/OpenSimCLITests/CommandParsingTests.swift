@@ -21,4 +21,27 @@ final class CommandParsingTests: XCTestCase {
         let delete = try XCTUnwrap(command as? DeviceDeleteCommand)
         XCTAssertTrue(delete.globals.yes)
     }
+
+    func testParsesRuntimeListPlatform() throws {
+        let command = try OpenSimCommand.parseAsRoot(["runtime", "list", "--platform", "iOS"])
+        let list = try XCTUnwrap(command as? RuntimeListCommand)
+        XCTAssertEqual(list.platform, "iOS")
+    }
+
+    func testParsesAppLaunchEnvironment() throws {
+        let command = try OpenSimCommand.parseAsRoot([
+            "app", "launch", "com.apple.Preferences",
+            "--device", "iPhone Air",
+            "--env", "OS_ACTIVITY_MODE=disable",
+        ])
+        let launch = try XCTUnwrap(command as? AppLaunchCommand)
+        XCTAssertEqual(launch.bundleID, "com.apple.Preferences")
+        XCTAssertEqual(launch.environment, ["OS_ACTIVITY_MODE=disable"])
+    }
+
+    func testParsesAppContainerKind() throws {
+        let command = try OpenSimCommand.parseAsRoot(["app", "container", "com.apple.Preferences", "--kind", "data"])
+        let container = try XCTUnwrap(command as? AppContainerCommand)
+        XCTAssertEqual(container.kind, "data")
+    }
 }

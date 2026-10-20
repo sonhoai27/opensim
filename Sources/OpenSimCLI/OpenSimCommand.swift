@@ -9,6 +9,8 @@ public struct OpenSimCommand: AsyncParsableCommand {
         version: OpenSimVersion.version,
         subcommands: [
             DeviceCommand.self,
+            RuntimeCommand.self,
+            AppCommand.self,
         ]
     )
 
