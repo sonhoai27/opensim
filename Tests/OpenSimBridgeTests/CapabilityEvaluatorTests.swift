@@ -37,6 +37,62 @@ final class CapabilityEvaluatorTests: XCTestCase {
         XCTAssertEqual(capabilities.tv, .unavailable)
     }
 
+    func testPlan2BackendsMapToCapabilities() {
+        let xcuiTest = Plan2Capabilities(
+            render: .ioSurface,
+            input: .xcuiTest,
+            accessibility: .xcuiTest,
+            multiTouch: .unknown,
+            hardwareButtons: .unknown,
+            notes: [:]
+        )
+        let fallback = CapabilityEvaluator.evaluate(
+            runtimes: [],
+            frameworks: frameworks,
+            simctlAvailable: true,
+            plan2: xcuiTest
+        )
+        XCTAssertEqual(fallback.render, .available)
+        XCTAssertEqual(fallback.hid, .unknown)
+        XCTAssertEqual(fallback.accessibility, .unknown)
+
+        let primary = Plan2Capabilities(
+            render: .simDisplayView,
+            input: .simulatorKit,
+            accessibility: .simAccessibilityManager,
+            multiTouch: .available,
+            hardwareButtons: .available,
+            notes: [:]
+        )
+        let full = CapabilityEvaluator.evaluate(
+            runtimes: [],
+            frameworks: frameworks,
+            simctlAvailable: true,
+            plan2: primary
+        )
+        XCTAssertEqual(full.render, .available)
+        XCTAssertEqual(full.hid, .available)
+        XCTAssertEqual(full.accessibility, .available)
+
+        let unavailable = Plan2Capabilities(
+            render: .screenshotPolling,
+            input: .unavailable,
+            accessibility: .unavailable,
+            multiTouch: .unavailable,
+            hardwareButtons: .unavailable,
+            notes: [:]
+        )
+        let polling = CapabilityEvaluator.evaluate(
+            runtimes: [],
+            frameworks: frameworks,
+            simctlAvailable: true,
+            plan2: unavailable
+        )
+        XCTAssertEqual(polling.render, .unknown)
+        XCTAssertEqual(polling.hid, .unavailable)
+        XCTAssertEqual(polling.accessibility, .unavailable)
+    }
+
     func testMissingSimctlMakesScreenshotUnknown() {
         let capabilities = CapabilityEvaluator.evaluate(runtimes: [], frameworks: frameworks, simctlAvailable: false)
         XCTAssertEqual(capabilities.screenshot, .unknown)

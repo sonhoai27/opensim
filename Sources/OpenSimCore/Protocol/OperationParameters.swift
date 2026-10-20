@@ -70,6 +70,19 @@ public struct OperationParameters: Sendable {
         return parsed
     }
 
+    public func double(_ name: String, default defaultValue: Double?) throws -> Double {
+        guard let value = optionalString(name) else {
+            if let defaultValue {
+                return defaultValue
+            }
+            throw OpenSimError.invalidArgument("Missing required parameter \(name)")
+        }
+        guard let parsed = Double(value), parsed.isFinite else {
+            throw OpenSimError.invalidArgument("Parameter \(name) must be a finite number")
+        }
+        return parsed
+    }
+
     public func jsonArray(_ name: String) throws -> [String]? {
         guard let value = optionalString(name) else {
             return nil

@@ -7,6 +7,7 @@ public struct DoctorService: DoctorReporting {
     private let privateAPI: PrivateAPIStatus
     private let devices: any DeviceControlling
     private let runtimes: any RuntimeControlling
+    private let plan2: Plan2Capabilities?
     private let daemonProbe: DaemonStateProbe
 
     public init(
@@ -15,13 +16,15 @@ public struct DoctorService: DoctorReporting {
         privateAPI: PrivateAPIStatus,
         devices: any DeviceControlling,
         runtimes: any RuntimeControlling,
-        paths: OpenSimPaths
+        paths: OpenSimPaths,
+        plan2: Plan2Capabilities? = nil
     ) {
         self.xcode = xcode
         self.frameworks = frameworks
         self.privateAPI = privateAPI
         self.devices = devices
         self.runtimes = runtimes
+        self.plan2 = plan2
         self.daemonProbe = DaemonStateProbe(paths: paths)
     }
 
@@ -31,20 +34,28 @@ public struct DoctorService: DoctorReporting {
         let capabilities = CapabilityEvaluator.evaluate(
             runtimes: runtimeList,
             frameworks: frameworks,
-            simctlAvailable: true
+            simctlAvailable: true,
+            plan2: plan2
         )
         let version = ProcessInfo.processInfo.operatingSystemVersion
         let macOSVersion = "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)"
         let diskFree = try? URL(fileURLWithPath: NSHomeDirectory())
             .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
             .volumeAvailableCapacityForImportantUsage
-        let notes = [
+        var notes = [
             "bridge": "simctl is the preferred path for lifecycle, runtime, app and log",
-            "screen": "ScreenControlling is provided by Plan 2",
+            "screen": "ScreenControlling is provided by simctl",
             "input": "InputControlling is provided by Plan 2",
             "a11y": "AccessibilityReading is provided by Plan 2",
             "private_api": "Capabilities are probed by class existence only",
         ]
+        if let plan2 {
+            notes["render_backend"] = plan2.render.rawValue
+            notes["input_backend"] = plan2.input.rawValue
+            notes["a11y_backend"] = plan2.accessibility.rawValue
+            notes["multi_touch"] = plan2.multiTouch.rawValue
+            notes["hardware_buttons"] = plan2.hardwareButtons.rawValue
+        }
         return DoctorReport(
             generatedAt: Date(),
             macOSVersion: macOSVersion,

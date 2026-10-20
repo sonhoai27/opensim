@@ -1637,7 +1637,9 @@ public func makeDisplaySurface(for device: DeviceID) throws -> any DisplaySurfac
 }
 ```
 
-`live` tạo gate, `SimctlScreenService`, surface factory theo `gate.render` (`SimDisplaySurface`, `IOSurfaceDisplaySurface`, `ScreenshotPollingSurface`). Input: `ViewEventInputService` nếu `.simulatorKit`, `XCUITestInputService` nếu helper, bọc `CompositeInputService`; primary multi-touch/button chỉ true khi gate report đã xác minh. Accessibility: `SimAccessibilityService` nếu `.simAccessibilityManager`, `XCUITestAccessibilityService` nếu `.xcuiTest`, ngược lại nil.
+`live` tạo gate, `SimctlScreenService`, surface factory theo `gate.render` (`IOSurfaceDisplaySurface`, `ScreenshotPollingSurface`; nhánh `.simDisplayView` đã retired nên dùng IOSurface). Input chỉ có `XCUITestInputService` khi gate chọn `.xcuiTest` và env `OPENSIM_XCUITEST_BUNDLE_ID`; các nhánh simulatorKit/private a11y đã retired nên nil. Multi-touch/button vẫn `unknown` cho tới khi Task 15 xác minh.
+
+`SimctlScreenService` conform thêm `ScreenshotOutWriting` để executor truyền `out`; operation `screen_screenshot` dùng overload này khi có `out`. `UIAutomationService` được inject trong `CLIRuntime.makeBackend` cùng catalog `.plan2()`.
 
 `BridgeOperationExecutor` thêm property và init parameter:
 

@@ -1,7 +1,11 @@
 import Foundation
 import OpenSimCore
 
-public struct SimctlBridge: SimulatorBridge, DoctorReporting, CrashReportReading {
+public protocol SimulatorScreenDisplaying: Sendable {
+    @MainActor func makeDisplaySurface(for device: DeviceID) throws -> any DisplaySurface
+}
+
+public struct SimctlBridge: SimulatorBridge, DoctorReporting, CrashReportReading, SimulatorScreenDisplaying {
     public let devices: any DeviceControlling
     public let runtimes: any RuntimeControlling
     public let apps: any AppControlling
@@ -13,6 +17,7 @@ public struct SimctlBridge: SimulatorBridge, DoctorReporting, CrashReportReading
     private let crashService: any CrashReportReading
     private let doctorService: any DoctorReporting
     private let capabilityProvider: @Sendable () async -> BridgeCapabilities
+    private let displaySurfaceFactory: (@MainActor @Sendable (DeviceID) throws -> any DisplaySurface)?
 
     public init(
         devices: any DeviceControlling,
@@ -21,18 +26,31 @@ public struct SimctlBridge: SimulatorBridge, DoctorReporting, CrashReportReading
         logs: any LogControlling,
         crashReports: any CrashReportReading,
         doctor: any DoctorReporting,
+        screen: (any ScreenControlling)? = nil,
+        input: (any InputControlling)? = nil,
+        accessibility: (any AccessibilityReading)? = nil,
+        displaySurfaceFactory: (@MainActor @Sendable (DeviceID) throws -> any DisplaySurface)? = nil,
         capabilityProvider: @escaping @Sendable () async -> BridgeCapabilities
     ) {
         self.devices = devices
         self.runtimes = runtimes
         self.apps = apps
         self.logs = logs
-        self.screen = nil
-        self.input = nil
-        self.accessibility = nil
+        self.screen = screen
+        self.input = input
+        self.accessibility = accessibility
+        self.displaySurfaceFactory = displaySurfaceFactory
         self.crashService = crashReports
         self.doctorService = doctor
         self.capabilityProvider = capabilityProvider
+    }
+
+    @MainActor
+    public func makeDisplaySurface(for device: DeviceID) throws -> any DisplaySurface {
+        guard let displaySurfaceFactory else {
+            throw OpenSimError.capabilityUnavailable("render")
+        }
+        return try displaySurfaceFactory(device)
     }
 
     public var capabilities: BridgeCapabilities {
@@ -62,13 +80,53 @@ public struct SimctlBridge: SimulatorBridge, DoctorReporting, CrashReportReading
         let logs = SimctlLogService(executor: executor, timeout: timeout)
         let crashes = CrashReportService(devices: devices)
         let paths = OpenSimPaths()
+        let gate = Plan2CapabilityGate.evaluate(
+            checker: SimulatorKitLoader.live(),
+            helperConfigured: XCUITestHelperRunner.isConfigured
+        )
+        let capture = SimctlScreenCapture(
+            executor: executor,
+            devices: devices,
+            profiles: SimctlDeviceTypeProfileProvider(executor: executor, timeout: timeout),
+            paths: paths,
+            timeout: timeout
+        )
+        let recording = SimctlRecordingController(
+            launcher: ProcessRecordingLauncher(),
+            store: RecordingStateStore(directory: paths.recordingStateDirectory),
+            paths: paths
+        )
+        let screenService = SimctlScreenService(capture: capture, recorder: recording)
+        let helperRunner = XCUITestHelperRunner()
+        let bundleID = ProcessInfo.processInfo.environment["OPENSIM_XCUITEST_BUNDLE_ID"]
+        let inputService: (any InputControlling)?
+        if gate.input == .xcuiTest {
+            inputService = XCUITestInputService(runner: helperRunner, bundleID: bundleID)
+        } else {
+            inputService = nil
+        }
+        let accessibilityService: (any AccessibilityReading)?
+        if gate.accessibility == .xcuiTest {
+            accessibilityService = XCUITestAccessibilityService(runner: helperRunner, bundleID: bundleID)
+        } else {
+            accessibilityService = nil
+        }
+        let displaySurfaceFactory: @MainActor @Sendable (DeviceID) throws -> any DisplaySurface = { device in
+            switch gate.render {
+            case .simDisplayView, .ioSurface:
+                return IOSurfaceDisplaySurface(device: device)
+            case .screenshotPolling:
+                return ScreenshotPollingSurface(device: device, screens: screenService)
+            }
+        }
         let doctor = DoctorService(
             xcode: xcode,
             frameworks: frameworks,
             privateAPI: privateAPI,
             devices: devices,
             runtimes: runtimes,
-            paths: paths
+            paths: paths,
+            plan2: gate
         )
         let runtimesForCapabilities: any RuntimeControlling = runtimes
         let capabilityProvider: @Sendable () async -> BridgeCapabilities = {
@@ -76,7 +134,8 @@ public struct SimctlBridge: SimulatorBridge, DoctorReporting, CrashReportReading
             return CapabilityEvaluator.evaluate(
                 runtimes: list,
                 frameworks: frameworks,
-                simctlAvailable: true
+                simctlAvailable: true,
+                plan2: gate
             )
         }
         return SimctlBridge(
@@ -86,6 +145,10 @@ public struct SimctlBridge: SimulatorBridge, DoctorReporting, CrashReportReading
             logs: logs,
             crashReports: crashes,
             doctor: doctor,
+            screen: screenService,
+            input: inputService,
+            accessibility: accessibilityService,
+            displaySurfaceFactory: displaySurfaceFactory,
             capabilityProvider: capabilityProvider
         )
     }

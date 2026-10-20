@@ -10,7 +10,13 @@ public enum CLIRuntime {
         let executor = BridgeOperationExecutor(
             bridge: bridge,
             crashReports: bridge,
-            doctor: bridge
+            doctor: bridge,
+            catalog: .plan2(),
+            automation: UIAutomationService(
+                screen: bridge.screen,
+                input: bridge.input,
+                accessibility: bridge.accessibility
+            )
         )
         return DirectCommandBackend(executor: executor)
     }

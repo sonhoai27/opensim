@@ -1,7 +1,7 @@
 import Foundation
 import OpenSimCore
 
-public struct SimctlScreenService: ScreenControlling, RecordingControlling {
+public struct SimctlScreenService: ScreenControlling, RecordingControlling, ScreenshotOutWriting {
     private let capture: SimctlScreenCapture
     private let recorder: SimctlRecordingController
 

@@ -42,6 +42,16 @@ public protocol ScreenControlling: Sendable {
     func stopRecording(_ id: RecordingID) async throws -> String
 }
 
+public protocol ScreenshotOutWriting: Sendable {
+    func screenshot(
+        on device: DeviceID,
+        format: ScreenshotFormat,
+        scale: Double,
+        quality: Int?,
+        out: String?
+    ) async throws -> Screenshot
+}
+
 public protocol RecordingControlling: Sendable {
     func recordingInfo(_ id: RecordingID) async throws -> RecordingInfo
     func stopRecordingResult(_ id: RecordingID) async throws -> RecordingStopResult
