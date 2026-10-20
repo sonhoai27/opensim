@@ -1174,8 +1174,10 @@ git commit -m "feat(bridge): add digitizer input and composite routing"
 > Plan 0: dùng `SimDeviceScreen(screenID: 1).screen.framebufferSurface` (IOSurface), không dùng `SimDisplayView`/`unmaskedSurface`. Nội dung code bên dưới được cập nhật theo hướng này trước khi implement.
 
 **Files:**
-- Create: `Sources/OpenSimBridge/Screen/IOSurfaceDisplaySurface.swift`
+- Create: `Sources/OpenSimBridge/Screen/DisplaySurface.swift`, `Sources/OpenSimBridge/Screen/IOSurfaceDisplaySurface.swift`
 - Test: `Tests/OpenSimBridgeTests/FallbackTests.swift`
+
+> `DisplaySurface` được tạo ở đây vì Task 7 đã retired; Task 10 và Task 13 dùng protocol này.
 
 **Interfaces:**
 - Produces: `IOSurfaceDisplaySurface.isSupported/connect/disconnect`.
@@ -1208,7 +1210,9 @@ Expected: FAIL với `cannot find 'IOSurfaceDisplaySurface' in scope`.
 
 - [ ] **Step 3: Viết IOSurface surface**
 
-`connect` lấy `SimDeviceScreen` object qua `initWithDevice:screenID:` (screenID 1) bằng IMP, đọc `.screen`, rồi gọi `framebufferSurface` trên proxy (dynamic forwarding), gán `view.layer.contents = surface`, `contentsGravity = .resizeAspect`; refresh 30 Hz bằng task 33 ms; `pixelSize` từ `IOSurfaceGetWidth/Height`; `screenScale` từ `ScreenControlling.screens`. `isSupported` yêu cầu `SimDeviceScreen` class, selector `screen`, và `SimServiceContext` class. Lỗi thiếu API trả `private_api_unavailable`.
+`connect` lấy `SimDeviceScreen` object qua `initWithDevice:screenID:` (screenID 1) bằng IMP, đọc `.screen`, rồi gọi `framebufferSurface` trên proxy (dynamic forwarding), chuyển IOSurface sang `CGImage` bằng `CIContext` rồi gán `view.layer.contents`, `contentsGravity = .resizeAspect`; refresh 30 Hz bằng task 33 ms; `pixelSize` từ `IOSurfaceGetWidth/Height`; `screenScale` từ `ScreenControlling.screens`. `isSupported` yêu cầu `SimDeviceScreen` class, selector `screen`, và `SimServiceContext` class. Lỗi thiếu API trả `private_api_unavailable`.
+
+Gán trực tiếp IOSurface vào `layer.contents` làm process crash (`swift_unknownObjectRelease`, SIGTRAP) trên macOS 27.0.1; đường CGImage đã được kiểm chứng bằng integration test kết nối simulator thật. Giữ strong reference tới IOSurface trong surface và clear layer trước khi thả ở `disconnect`.
 
 ```swift
 public func connect() async throws {
