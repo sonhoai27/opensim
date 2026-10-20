@@ -1,0 +1,43 @@
+name: OpenSimFixture
+options:
+  bundleIdPrefix: dev.opensim
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  base:
+    CODE_SIGNING_ALLOWED: NO
+targets:
+  OpenSimFixture:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.opensim.fixture
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Info.plist
+        TARGETED_DEVICE_FAMILY: "1,2"
+    scheme:
+      testTargets:
+        - OpenSimFixtureUITests
+  OpenSimFixtureUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: OpenSimFixture
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.opensim.fixture.uitests
+        TEST_TARGET_NAME: OpenSimFixture
+schemes:
+  OpenSimFixture:
+    build:
+      targets:
+        OpenSimFixture: all
+        OpenSimFixtureUITests: [test]
+    test:
+      targets:
+        - OpenSimFixtureUITests

@@ -8,6 +8,8 @@ xcuserdata/
 OpenSim.xcodeproj/
 *.log
 spike/
+Fixtures/OpenSimFixture/build/
+Fixtures/OpenSimFixture/OpenSimFixture.xcodeproj/
 .env
 secrets/
 daemon.json
